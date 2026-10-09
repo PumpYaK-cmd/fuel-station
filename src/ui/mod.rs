@@ -120,6 +120,10 @@ enum Message {
 fn boot() -> (State, Task<Message>) {
     let mut state = open();
     if let Ok(app) = &mut state {
+        #[cfg(windows)]
+        if let Err(e) = notify::register_app_id() {
+            app.error.get_or_insert_with(|| format!("toast id: {e}"));
+        }
         match notify::tray() {
             Ok(tray) => app.tray = Some(tray),
             Err(e) => {
