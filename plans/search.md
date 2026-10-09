@@ -1,6 +1,6 @@
 # search: search and filter the board (card ea8a704d)
 
-base: (set at claim)
+base: fbcb67179955f74d56b87acc10067be39f31af62
 
 ## Context
 `src/ui/mod.rs` `view_board` renders all `self.board` cards per column through

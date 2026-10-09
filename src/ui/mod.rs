@@ -6,16 +6,17 @@ mod setup_sheet;
 pub mod theme;
 mod titlebar;
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::f32::consts::PI;
+use std::fmt;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use iced::keyboard::{self, Key, key::Named};
 use iced::theme::palette::mix;
 use iced::widget::{
-    button, canvas, column, container, mouse_area, pick_list, progress_bar, row, rule, scrollable,
-    space, stack, text, text_editor,
+    button, canvas, column, container, mouse_area, operation, pick_list, progress_bar, row, rule,
+    scrollable, space, stack, text, text_editor, text_input,
 };
 use iced::{Alignment, Element, Length, Size, Subscription, Task, Theme, mouse, window};
 
@@ -77,6 +78,43 @@ struct App {
     tray: Option<notify::Tray>,
     focused: bool,
     last_event: i64,
+    search: String,
+    filter: Filter,
+}
+
+const SEARCH_ID: &str = "search";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Filter {
+    All,
+    Human,
+    Held,
+    Tier(String),
+}
+
+impl fmt::Display for Filter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Filter::All => f.write_str("all"),
+            Filter::Human => f.write_str("human"),
+            Filter::Held => f.write_str("held"),
+            Filter::Tier(tier) => write!(f, "tier {tier}"),
+        }
+    }
+}
+
+fn card_matches(card: &CardSummary, search: &str, filter: &Filter) -> bool {
+    let search = search.trim().to_lowercase();
+    let found = search.is_empty()
+        || card.key.to_lowercase().contains(&search)
+        || card.title.to_lowercase().contains(&search);
+    found
+        && match filter {
+            Filter::All => true,
+            Filter::Human => card.human,
+            Filter::Held => card.holder.is_some(),
+            Filter::Tier(tier) => card.tier.as_ref() == Some(tier),
+        }
 }
 
 #[derive(Debug, Clone)]
@@ -115,6 +153,9 @@ enum Message {
     HoverCard(String),
     UnhoverCard(String),
     Focus(bool),
+    Search(String),
+    FilterChanged(Filter),
+    FocusSearch,
 }
 
 fn boot() -> (State, Task<Message>) {
@@ -166,6 +207,8 @@ fn open() -> State {
         tray: None,
         focused: true,
         last_event: 0,
+        search: String::new(),
+        filter: Filter::All,
     };
     app.reload(None);
     match app.store.last_event_id() {
@@ -213,7 +256,8 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::CloseDetail => request_leave(app, Leave::Close),
         Message::Escape => match &mut app.detail {
             Some(d) if d.leaving.is_some() => d.leaving = None,
-            _ => request_leave(app, Leave::Close),
+            Some(_) => request_leave(app, Leave::Close),
+            None => app.search.clear(),
         },
         Message::TitleEdited(title) => {
             if let Some(d) = &mut app.detail {
@@ -365,6 +409,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
         }
         Message::Focus(focused) => app.focused = focused,
+        Message::Search(search) => app.search = search,
+        Message::FilterChanged(filter) => app.filter = filter,
+        Message::FocusSearch => return operation::focus(SEARCH_ID),
     }
     Task::none()
 }
@@ -441,7 +488,7 @@ fn view(state: &State) -> Element<'_, Message> {
 
 fn subscription(state: &State) -> Subscription<Message> {
     match state {
-        Ok(app) => {
+        Ok(_) => {
             let tick = iced::time::every(Duration::from_millis(300)).map(|_| Message::Tick);
             let frames = window::frames().map(Message::Frame);
             let focus = window::events().filter_map(|(_, event)| match event {
@@ -449,13 +496,16 @@ fn subscription(state: &State) -> Subscription<Message> {
                 window::Event::Unfocused => Some(Message::Focus(false)),
                 _ => None,
             });
-            if app.detail.is_none() {
-                return Subscription::batch([tick, frames, focus]);
-            }
             let keys = keyboard::listen().filter_map(|event| match event {
                 keyboard::Event::KeyPressed {
-                    key, repeat: false, ..
+                    key,
+                    modifiers,
+                    repeat: false,
+                    ..
                 } => match key {
+                    Key::Character(c) if modifiers.command() && c.eq_ignore_ascii_case("f") => {
+                        Some(Message::FocusSearch)
+                    }
                     Key::Named(Named::ArrowLeft) => Some(Message::Step(false)),
                     Key::Named(Named::ArrowRight) => Some(Message::Step(true)),
                     Key::Named(Named::Escape) => Some(Message::Escape),
@@ -689,6 +739,17 @@ impl App {
         let header = row![
             text(format!("{} · {}", project.key, project.name)),
             space::horizontal(),
+            text_input("search", &self.search)
+                .id(SEARCH_ID)
+                .on_input(Message::Search)
+                .style(theme::input)
+                .width(220),
+            pick_list(
+                self.filter_options(),
+                Some(&self.filter),
+                Message::FilterChanged
+            )
+            .style(theme::picker),
             action.style(theme::button(false)),
         ]
         .spacing(20)
@@ -706,15 +767,30 @@ impl App {
             .into()
     }
 
+    fn filter_options(&self) -> Vec<Filter> {
+        let tiers: BTreeSet<&String> = self.board.iter().filter_map(|c| c.tier.as_ref()).collect();
+        let mut options = vec![Filter::All, Filter::Human, Filter::Held];
+        options.extend(tiers.into_iter().cloned().map(Filter::Tier));
+        if !options.contains(&self.filter) {
+            options.push(self.filter.clone());
+        }
+        options
+    }
+
     fn view_column(&self, col: Column) -> Element<'_, Message> {
-        let cards: Vec<&CardSummary> = self.board.iter().filter(|c| c.column == col).collect();
+        let in_column: Vec<&CardSummary> = self.board.iter().filter(|c| c.column == col).collect();
+        let cards: Vec<&CardSummary> = in_column
+            .iter()
+            .copied()
+            .filter(|c| card_matches(c, &self.search, &self.filter))
+            .collect();
         let (name_color, gauge_color) = match col {
             Column::Review => (theme::WARNING, theme::WARNING),
             Column::Done => (theme::SUCCESS, theme::SUCCESS),
             _ => (theme::TEXT, theme::PRIMARY),
         };
         let grow = 1.0 - (1.0 - self.reloaded.elapsed().as_secs_f32().min(1.0)).powi(3);
-        let fill = (cards.len() as f32).min(theme::COLUMN_CAP) / theme::COLUMN_CAP * grow;
+        let fill = (in_column.len() as f32).min(theme::COLUMN_CAP) / theme::COLUMN_CAP * grow;
         let header = row![
             text(col.as_str().to_uppercase()).size(11).color(name_color),
             text(cards.len().to_string())
@@ -904,5 +980,65 @@ fn role_glyph(role: Role) -> char {
         Role::Fuel => '\u{f0298}',
         Role::Mechanic => '\u{f0ad}',
         Role::Manager => '\u{f007}',
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn card(key: &str, title: &str) -> CardSummary {
+        CardSummary {
+            key: key.to_string(),
+            title: title.to_string(),
+            column: Column::Backlog,
+            position: 0,
+            tier: None,
+            human: false,
+            holder: None,
+        }
+    }
+
+    #[test]
+    fn matches_key_and_title_ignoring_case() {
+        let c = card("FS-12", "Fix the Gauge");
+        assert!(card_matches(&c, "fs-1", &Filter::All));
+        assert!(card_matches(&c, "GAUGE", &Filter::All));
+        assert!(card_matches(&c, "", &Filter::All));
+        assert!(!card_matches(&c, "toast", &Filter::All));
+    }
+
+    #[test]
+    fn human_filter() {
+        let mut c = card("FS-1", "a");
+        assert!(!card_matches(&c, "", &Filter::Human));
+        c.human = true;
+        assert!(card_matches(&c, "", &Filter::Human));
+    }
+
+    #[test]
+    fn held_filter() {
+        let mut c = card("FS-1", "a");
+        assert!(!card_matches(&c, "", &Filter::Held));
+        c.holder = Some(manager());
+        assert!(card_matches(&c, "", &Filter::Held));
+    }
+
+    #[test]
+    fn tier_filter() {
+        let mut c = card("FS-1", "a");
+        assert!(!card_matches(&c, "", &Filter::Tier("T1".into())));
+        c.tier = Some("T1".into());
+        assert!(card_matches(&c, "", &Filter::Tier("T1".into())));
+        assert!(!card_matches(&c, "", &Filter::Tier("T2".into())));
+    }
+
+    #[test]
+    fn search_and_filter_combine() {
+        let mut c = card("FS-1", "search box");
+        c.human = true;
+        assert!(card_matches(&c, "search", &Filter::Human));
+        assert!(!card_matches(&c, "other", &Filter::Human));
+        assert!(!card_matches(&c, "search", &Filter::Held));
     }
 }
