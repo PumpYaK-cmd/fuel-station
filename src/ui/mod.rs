@@ -20,7 +20,7 @@ use iced::widget::{
     button, canvas, column, container, mouse_area, operation, pick_list, progress_bar, row, rule,
     scrollable, space, stack, text, text_editor, text_input,
 };
-use iced::{Alignment, Element, Length, Size, Subscription, Task, Theme, mouse, window};
+use iced::{Alignment, Element, Length, Padding, Size, Subscription, Task, Theme, mouse, window};
 
 use crate::import::{self, ImportReport};
 use crate::setup::agents;
@@ -1017,28 +1017,26 @@ impl App {
         .spacing(8)
         .align_y(Alignment::Center);
         let open = self.detail.as_ref().map(|d| d.key.as_str());
-        let dragging = self.drag.as_ref();
-        let target = dragging.filter(|d| d.moved && d.over == Some(col));
-        let list = scrollable(
-            column(cards.into_iter().map(|card| {
-                let flash = self
-                    .appeared
-                    .get(&card.key)
-                    .map(|at| at.elapsed().as_secs_f32() / FLASH_SECS)
-                    .filter(|age| *age < 1.0);
-                card_box(
-                    card,
-                    open == Some(card.key.as_str()),
-                    self.hovered.as_deref() == Some(card.key.as_str()),
-                    flash,
-                    dragging.is_some_and(|d| d.key == card.key),
-                    target.is_some_and(|d| {
-                        d.key != card.key && d.before.as_deref() == Some(card.key.as_str())
-                    }),
-                )
-            }))
-            .spacing(6),
-        )
+        let moving = self.drag.as_ref().filter(|d| d.moved);
+        let target = moving.filter(|d| d.over == Some(col));
+        let list = scrollable(column(cards.into_iter().map(|card| {
+            let flash = self
+                .appeared
+                .get(&card.key)
+                .map(|at| at.elapsed().as_secs_f32() / FLASH_SECS)
+                .filter(|age| *age < 1.0);
+            card_box(
+                card,
+                open == Some(card.key.as_str()),
+                self.hovered.as_deref() == Some(card.key.as_str()),
+                flash,
+                moving.is_some(),
+                moving.is_some_and(|d| d.key == card.key),
+                target.is_some_and(|d| {
+                    d.key != card.key && d.before.as_deref() == Some(card.key.as_str())
+                }),
+            )
+        })))
         .direction(theme::thin())
         .style(theme::scrollbar);
         let panel = container(column![header, rule::horizontal(1), list].spacing(10))
@@ -1060,7 +1058,7 @@ impl App {
                 alpha: 1.0,
             },
         };
-        mouse_area(
+        let area = mouse_area(
             stack![
                 panel,
                 canvas(brackets).width(Length::Fill).height(Length::Fill)
@@ -1069,8 +1067,11 @@ impl App {
             .height(Length::Fill),
         )
         .on_enter(Message::EnterColumn(col))
-        .on_release(Message::DropOn(col))
-        .into()
+        .on_release(Message::DropOn(col));
+        match moving {
+            Some(_) => area.interaction(mouse::Interaction::Grabbing).into(),
+            None => area.into(),
+        }
     }
 
     fn view_footer(&self) -> Element<'_, Message> {
@@ -1143,6 +1144,7 @@ fn card_box(
     selected: bool,
     hovered: bool,
     flash: Option<f32>,
+    dragging: bool,
     dragged: bool,
     drop_before: bool,
 ) -> Element<'_, Message> {
@@ -1204,11 +1206,11 @@ fn card_box(
             .width(Length::Fill)
             .style(theme::card(border)),
     );
-    mouse_area(boxed)
+    mouse_area(container(boxed).padding(Padding::ZERO.bottom(6)))
         .on_press(Message::Press(card.key.clone()))
         .on_enter(Message::EnterCard(card.key.clone()))
         .on_exit(Message::ExitCard(card.key.clone()))
-        .interaction(if dragged {
+        .interaction(if dragging {
             mouse::Interaction::Grabbing
         } else {
             mouse::Interaction::Pointer
