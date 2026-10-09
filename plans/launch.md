@@ -10,7 +10,7 @@ tools, so the board, activity feed and agents strip already show progress. What 
 adds: start the session, show its raw output, stop it, show its cost.
 
 ## Rulings (design pass)
-- **What runs**: `claude -p "/station:grab <KEY>" --output-format stream-json --verbose
+- **What runs**: `claude -p "/mcp__station__grab <KEY>" --output-format stream-json --verbose
   --permission-mode auto --max-budget-usd <RUN_BUDGET_USD>` in the project's `path`, plus
   `--mcp-config <path>/.mcp.json` when that file exists (headless sessions don't show the
   project MCP approval prompt). One run per card; several cards may run at once.
