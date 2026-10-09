@@ -394,19 +394,8 @@ impl Store {
         self.write(|tx| {
             let (project_id, card) = find_card(tx, card_key)?;
             move_to(tx, project_id, card.id, column)?;
-            event(
-                tx,
-                project_id,
-                Some(card.id),
-                actor,
-                "card_move",
-                &format!(
-                    "Moved {} {} -> {}",
-                    card.key,
-                    card.column.as_str(),
-                    column.as_str()
-                ),
-            )?;
+            let message = move_message(&card, column);
+            event(tx, project_id, Some(card.id), actor, "card_move", &message)?;
             card_by_id(tx, card.id)
         })
     }
@@ -415,17 +404,14 @@ impl Store {
         self.write(|tx| {
             let (project_id, card) = find_card(tx, card_key)?;
             let at = reorder(tx, project_id, card.id, card.column, position)?;
+            let message = reorder_message(&card, at);
             event(
                 tx,
                 project_id,
                 Some(card.id),
                 actor,
                 "card_reorder",
-                &format!(
-                    "Moved {} to position {at} in {}",
-                    card.key,
-                    card.column.as_str()
-                ),
+                &message,
             )?;
             card_by_id(tx, card.id)
         })
@@ -440,25 +426,15 @@ impl Store {
     ) -> Result<Card> {
         self.write(|tx| {
             let (project_id, card) = find_card(tx, card_key)?;
-            if column != card.column {
+            let moved = column != card.column;
+            if moved {
                 move_to(tx, project_id, card.id, column)?;
             }
             let at = reorder(tx, project_id, card.id, column, position)?;
-            let (kind, message) = if column != card.column {
-                (
-                    "card_move",
-                    format!(
-                        "Moved {} {} -> {}",
-                        card.key,
-                        card.column.as_str(),
-                        column.as_str()
-                    ),
-                )
+            let (kind, message) = if moved {
+                ("card_move", move_message(&card, column))
             } else {
-                (
-                    "card_reorder",
-                    format!("Moved {} to position {at} in {}", card.key, column.as_str()),
-                )
+                ("card_reorder", reorder_message(&card, at))
             };
             event(tx, project_id, Some(card.id), actor, kind, &message)?;
             card_by_id(tx, card.id)
@@ -922,6 +898,23 @@ fn reorder(
         params![card_id, now()],
     )?;
     Ok(at)
+}
+
+fn move_message(card: &Card, to: Column) -> String {
+    format!(
+        "Moved {} {} -> {}",
+        card.key,
+        card.column.as_str(),
+        to.as_str()
+    )
+}
+
+fn reorder_message(card: &Card, at: usize) -> String {
+    format!(
+        "Moved {} to position {at} in {}",
+        card.key,
+        card.column.as_str()
+    )
 }
 
 fn insert_comment(conn: &Connection, card: &Card, actor: &Actor, body: &str) -> Result<Comment> {

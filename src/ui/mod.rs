@@ -140,8 +140,10 @@ struct Drag {
 impl Drag {
     fn lift(&mut self) {
         if !self.moved {
+            let now = Instant::now();
             self.moved = true;
-            self.lifted = Some(Instant::now());
+            self.lifted = Some(now);
+            self.over_at = now;
         }
     }
 
@@ -158,9 +160,18 @@ impl Drag {
         }
         let now = Instant::now();
         let open = ease_out(self.slot_at.elapsed().as_secs_f32() / GAP_SECS);
+        let closing = match &self.prev {
+            Some((prev, at, from)) if Some(prev) == slot.as_ref() => {
+                from * (1.0 - ease_out(at.elapsed().as_secs_f32() / GAP_SECS))
+            }
+            _ => 0.0,
+        };
         self.prev = self.slot.take().map(|old| (old, now, open));
         self.slot = slot;
-        self.slot_at = now;
+        let head_start = GAP_SECS * (1.0 - (1.0 - closing).cbrt());
+        self.slot_at = now
+            .checked_sub(Duration::from_secs_f32(head_start))
+            .unwrap_or(now);
     }
 
     fn gap(&self, column: Column, before: Option<&str>) -> f32 {
