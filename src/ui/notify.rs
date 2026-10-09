@@ -1,3 +1,6 @@
+#[cfg(windows)]
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
@@ -24,12 +27,17 @@ pub fn toast_text(e: &Event) -> Option<String> {
 const APP_ID: &str = "FuelStation.Station";
 
 #[cfg(windows)]
+static REGISTERED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(windows)]
 pub fn register_app_id() -> Result<(), String> {
     let (key, _) = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
         .create_subkey(format!(r"Software\Classes\AppUserModelId\{APP_ID}"))
         .map_err(|e| e.to_string())?;
     key.set_value("DisplayName", &"Fuel Station")
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    REGISTERED.store(true, Ordering::Relaxed);
+    Ok(())
 }
 
 pub fn toast(title: &str, body: &str) {
@@ -38,7 +46,9 @@ pub fn toast(title: &str, body: &str) {
         let mut notification = notify_rust::Notification::new();
         notification.summary(&title).body(&body);
         #[cfg(windows)]
-        notification.app_id(APP_ID);
+        if REGISTERED.load(Ordering::Relaxed) {
+            notification.app_id(APP_ID);
+        }
         #[cfg(not(windows))]
         notification.appname("Fuel Station");
         let _ = notification.show();

@@ -6,9 +6,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const EXE: &str = "fuel-station.exe";
 const OLD_EXE: &str = "fuel-station.old.exe";
 
+pub fn app_dir() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(|base| PathBuf::from(base).join("FuelStation"))
+}
+
 pub fn bin_dir() -> PathBuf {
-    let base = std::env::var_os("LOCALAPPDATA").expect("LOCALAPPDATA is not set");
-    PathBuf::from(base).join("FuelStation").join("bin")
+    app_dir().expect("LOCALAPPDATA is not set").join("bin")
 }
 
 pub fn installed_exe() -> PathBuf {

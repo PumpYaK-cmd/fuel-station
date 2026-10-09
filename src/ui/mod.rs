@@ -56,10 +56,8 @@ pub fn install_panic_hook() {
 }
 
 fn crash_log() -> PathBuf {
-    std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
+    crate::setup::install::app_dir()
         .unwrap_or_default()
-        .join("FuelStation")
         .join("crash.log")
 }
 
@@ -575,7 +573,9 @@ fn save(app: &mut App) -> bool {
 fn request_leave(app: &mut App, target: Leave) -> Task<Message> {
     match &mut app.detail {
         Some(d) if d.dirty => {
-            d.leaving = Some(target);
+            if !matches!(d.leaving, Some(Leave::Quit)) {
+                d.leaving = Some(target);
+            }
             Task::none()
         }
         _ => leave(app, target),

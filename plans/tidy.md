@@ -1,6 +1,6 @@
 # tidy: three small backlog fixes (cards da4f8ad1, 06c7b9a7, 72859bf0)
 
-base: (set at claim)
+base: 9ddc7da39f95f247a790ea1b8edb13174e4d274a
 
 ## 1. Parked leave overwritten (da4f8ad1) - `src/ui/mod.rs` `request_leave`
 Ruling: the latest action wins, except nothing replaces a parked `Leave::Quit`.
