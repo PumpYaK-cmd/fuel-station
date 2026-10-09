@@ -20,8 +20,10 @@ use iced::{Alignment, Element, Length, Size, Subscription, Task, Theme, mouse, w
 
 use crate::import::{self, ImportReport};
 use crate::setup::agents;
+use crate::setup::detect::Facts;
 use crate::store::{
-    self, Actor, Agent, CardPatch, CardSummary, Column, Event, Project, Role, Store, StoreError,
+    self, Actor, Agent, CardPatch, CardSummary, Column, Event, NewProject, Project, Role, Store,
+    StoreError,
 };
 use detail::{Detail, Leave};
 use setup_sheet::Sheet;
@@ -95,6 +97,7 @@ enum Message {
     PickFolder(String),
     Picked(Option<String>, Option<PathBuf>),
     Repair(String),
+    Detected(Option<String>, NewProject, Facts),
     Sheet(setup_sheet::Message),
     Import,
     CloseImport,
@@ -273,32 +276,42 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     return Task::none();
                 }
             };
-            app.sheet = match key {
-                None => Some(Sheet::add(&dir, &taken)),
-                Some(key) => app
-                    .projects
-                    .iter()
-                    .find(|p| p.key == key)
-                    .map(|p| Sheet::repair_at(p, &dir, &taken)),
-            };
+            return setup_sheet::detect(dir, taken)
+                .map(move |(form, facts)| Message::Detected(key.clone(), form, facts));
         }
         Message::Picked(_, None) => {}
         Message::Repair(key) => {
+            let Some(project) = app.projects.iter().find(|p| p.key == key) else {
+                return Task::none();
+            };
+            match project.path.as_deref().filter(|p| !p.is_empty()) {
+                Some(path) => {
+                    let taken: Vec<String> = app.projects.iter().map(|p| p.key.clone()).collect();
+                    return setup_sheet::detect(PathBuf::from(path), taken).map(
+                        move |(form, facts)| Message::Detected(Some(key.clone()), form, facts),
+                    );
+                }
+                None => app.sheet = Some(Sheet::repair(project, None)),
+            }
+        }
+        Message::Detected(None, form, facts) => app.sheet = Some(Sheet::add(form, facts)),
+        Message::Detected(Some(key), form, facts) => {
             app.sheet = app
                 .projects
                 .iter()
                 .find(|p| p.key == key)
-                .map(Sheet::repair);
+                .map(|p| Sheet::repair(p, Some((form, facts))));
         }
         Message::Sheet(setup_sheet::Message::Close) => app.sheet = None,
         Message::Sheet(message) => {
-            if let Some(key) = app
-                .sheet
-                .as_mut()
-                .and_then(|sheet| sheet.update(message, &mut app.store))
-            {
+            let Some(sheet) = app.sheet.as_mut() else {
+                return Task::none();
+            };
+            let (key, task) = sheet.update(message, &mut app.store);
+            if let Some(key) = key {
                 app.reload(Some(key));
             }
+            return task.map(Message::Sheet);
         }
         Message::Import => {
             app.import = Some(import::import_all(&mut app.store, &import::trello_dir()));
