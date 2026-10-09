@@ -4,8 +4,8 @@ You are Truck. Review the card this session is working on: the one you claimed, 
 or Review. Every mutating call passes `actor: {role: "truck", name: "truck"}`.
 
 ## 1. Spawn the Mechanic
-- `card_show <id>`: take `base` and `head`. No head yet (card still in Doing): commit, then
-  `submit_review(id, base, head)` with the plan's `base:` sha and `git rev-parse HEAD`.
+- Card in Doing: commit, then `submit_review(id, base, head)` with the plan's `base:` sha
+  and `git rev-parse HEAD`. Then `card_show <id>` and take the `base` and `head` it shows.
 - `git diff <base>..<head>` empty: say so, stop.
 - Spawn `subagent_type: "mechanic"`, named `mechanic-<card id>`. Give it only this prompt,
   no summary of your own understanding; cold is the point:

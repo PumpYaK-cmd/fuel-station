@@ -5,7 +5,7 @@ phases in your task list before starting so phase 6 doesn't get lost. Stop after
 one card per session, and that stop is deliberate.
 
 Board and project facts come from the `station` MCP tools. Every mutating call passes
-`actor: {role: "truck", name: "truck"}`. Card ids look like `FS-12`.
+`actor: {role: "truck", name: "truck"}`. Card ids are `<project key>-<n>`; the key is in `project_info`.
 
 Columns: Backlog, Ready, Doing, Review, Done. Flow: Truck claims (Doing), plans onto the
 card, implements or hands to Fuel, `submit_review` (Review), Mechanic `review_result`
@@ -26,7 +26,7 @@ their contract and Station reporting rules; name the agent type, don't pass `mod
 
 ## 1. Claim
 - No argument: `grab` (from Ready, atomic; the card you get may not be the one you saw on
-  top, that's the point). Argument: that card, `card_move` to Doing. A title fragment
+  top, that's the point). A card id given: `card_move` that card to Doing. A title fragment
   instead of an id: find it with `board` first. Never take a human card (`{human}` on the
   board).
 - `checkin` with the card id.
@@ -85,10 +85,11 @@ with what changed the call.
   already keeps tests for this kind of change, sized like their neighbours.
 
 ## 5. Review
-- git mode: commit (imperative subject, body = why). `submit_review(id, base, head)` with
-  the phase 1 base and `git rev-parse HEAD`.
-- Run `/station:review`: a cold `mechanic` reviews `base..head` and records `review_result`.
-  Fix every finding; anything too big becomes a follow-up card.
+- git mode: commit (imperative subject, body = why). Card already in Review (Fuel
+  submitted): skip; otherwise `submit_review(id, base, head)` with the phase 1 base and
+  `git rev-parse HEAD`.
+- Follow the /station:review section below: a cold `mechanic` reviews `base..head` and
+  records `review_result`. Fix every finding; anything too big becomes a follow-up card.
 - Fixes: commit, `submit_review` again with the new head. A Fable Truck sends non-trivial
   fixes to `fuel-high`: a review finding is a failed attempt, it never goes back to Tier 1.
   A Tier 2 run that fails its gate or review means the plan is wrong: re-read the code and

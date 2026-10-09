@@ -71,7 +71,14 @@ impl Station {
         description = "Ship one card end to end: claim, plan, implement, review, ship."
     )]
     async fn grab_prompt(&self, Parameters(a): Parameters<GrabArgs>) -> Vec<PromptMessage> {
-        prompt_text(include_str!("prompts/grab.md"), a.card.as_deref())
+        prompt_text(
+            concat!(
+                include_str!("prompts/grab.md"),
+                "\n",
+                include_str!("prompts/review.md")
+            ),
+            a.card.as_deref(),
+        )
     }
 
     #[prompt(
