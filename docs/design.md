@@ -27,6 +27,10 @@ One crate, one binary, `fuel-station.exe`:
   per session from the project's `.mcp.json`. Subagents inherit the parent's MCP tools, so
   Fuel and Mechanic share Truck's connection.
 
+On Windows the exe is GUI-subsystem (no console from Explorer). CLI subcommands attach to
+the parent console; interactive cmd/PowerShell don't wait for it, so use
+`Start-Process -Wait` / `start /wait` when the exit code matters. Pipes wait as usual.
+
 Both modes open the same SQLite database: `%APPDATA%\FuelStation\station.db`, WAL mode,
 `busy_timeout` 5000 ms on every connection. The MCP server works with the GUI closed.
 The GUI polls `PRAGMA data_version` on one long-lived connection every 300 ms and reloads
