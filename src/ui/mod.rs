@@ -23,7 +23,7 @@ use crate::setup::agents;
 use crate::store::{
     self, Actor, Agent, CardPatch, CardSummary, Column, Event, Project, Role, Store, StoreError,
 };
-use detail::Detail;
+use detail::{Detail, Leave};
 use setup_sheet::Sheet;
 
 pub fn run() {
@@ -83,6 +83,9 @@ enum Message {
     TitleEdited(String),
     BodyAction(text_editor::Action),
     Save,
+    SaveAndLeave,
+    DiscardAndLeave,
+    KeepEditing,
     CommentEdited(String),
     AddComment,
     MoveTo(Column),
@@ -152,9 +155,10 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
     };
     match message {
         Message::SelectProject(key) => {
-            app.sheet = None;
-            app.import = None;
-            app.reload(Some(key));
+            if app.detail.as_ref().is_some_and(|d| d.dirty) && app.selected.as_ref() == Some(&key) {
+                return Task::none();
+            }
+            request_leave(app, Leave::Select(key));
         }
         Message::Tick => {
             app.ticks = app.ticks.wrapping_add(1);
@@ -167,16 +171,17 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
         }
         Message::ThemeChanged(theme) => app.theme = theme,
-        Message::OpenCard(key) => match app.store.card_show(&key) {
-            Ok(card) => app.detail = Some(Detail::new(card)),
-            Err(e) => app.error = Some(e.to_string()),
-        },
-        Message::CloseDetail => app.detail = None,
-        Message::Escape => {
-            if app.detail.as_ref().is_some_and(|d| !d.dirty) {
-                app.detail = None;
+        Message::OpenCard(key) => {
+            if app.detail.as_ref().is_some_and(|d| d.key == key) {
+                return Task::none();
             }
+            request_leave(app, Leave::Open(key));
         }
+        Message::CloseDetail => request_leave(app, Leave::Close),
+        Message::Escape => match &mut app.detail {
+            Some(d) if d.leaving.is_some() => d.leaving = None,
+            _ => request_leave(app, Leave::Close),
+        },
         Message::TitleEdited(title) => {
             if let Some(d) = &mut app.detail {
                 d.title = title;
@@ -190,27 +195,27 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
         }
         Message::Save => {
-            let Some(d) = &mut app.detail else {
-                return Task::none();
-            };
-            if d.title.trim().is_empty() {
-                return Task::none();
+            save(app);
+        }
+        Message::SaveAndLeave => {
+            if save(app)
+                && let Some(leaving) = app.detail.as_mut().and_then(|d| d.leaving.take())
+            {
+                leave(app, leaving);
             }
-            let body = d.body.text();
-            let patch = CardPatch {
-                title: (d.title != d.card.card.title).then(|| d.title.clone()),
-                body: (body != d.card.card.body).then_some(body),
-                ..CardPatch::default()
-            };
-            if patch.title.is_none() && patch.body.is_none() {
+        }
+        Message::DiscardAndLeave => {
+            if let Some(d) = &mut app.detail {
                 d.dirty = false;
-                return Task::none();
+                if let Some(leaving) = d.leaving.take() {
+                    leave(app, leaving);
+                }
             }
-            let result = app.store.card_update(&d.key, &manager(), &patch);
-            if result.is_ok() {
-                d.dirty = false;
+        }
+        Message::KeepEditing => {
+            if let Some(d) = &mut app.detail {
+                d.leaving = None;
             }
-            app.after_write(result);
         }
         Message::CommentEdited(comment) => {
             if let Some(d) = &mut app.detail {
@@ -314,6 +319,54 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
     }
     Task::none()
+}
+
+fn save(app: &mut App) -> bool {
+    let Some(d) = &mut app.detail else {
+        return true;
+    };
+    if d.title.trim().is_empty() {
+        return false;
+    }
+    let body = d.body.text();
+    let patch = CardPatch {
+        title: (d.title != d.card.card.title).then(|| d.title.clone()),
+        body: (body != d.card.card.body).then_some(body),
+        ..CardPatch::default()
+    };
+    if patch.title.is_none() && patch.body.is_none() {
+        d.dirty = false;
+        return true;
+    }
+    let result = app.store.card_update(&d.key, &manager(), &patch);
+    let saved = result.is_ok();
+    if saved {
+        d.dirty = false;
+    }
+    app.after_write(result);
+    saved
+}
+
+fn request_leave(app: &mut App, target: Leave) {
+    match &mut app.detail {
+        Some(d) if d.dirty => d.leaving = Some(target),
+        _ => leave(app, target),
+    }
+}
+
+fn leave(app: &mut App, target: Leave) {
+    match target {
+        Leave::Close => app.detail = None,
+        Leave::Open(key) => match app.store.card_show(&key) {
+            Ok(card) => app.detail = Some(Detail::new(card)),
+            Err(e) => app.error = Some(e.to_string()),
+        },
+        Leave::Select(key) => {
+            app.sheet = None;
+            app.import = None;
+            app.reload(Some(key));
+        }
+    }
 }
 
 fn pick_folder(key: Option<String>) -> Task<Message> {

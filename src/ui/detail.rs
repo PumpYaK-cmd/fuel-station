@@ -7,6 +7,13 @@ use iced::{Alignment, Element, Length, Theme};
 use super::{Message, local_time, role_glyph, theme};
 use crate::store::{CardDetail, Column};
 
+#[derive(Debug, Clone)]
+pub enum Leave {
+    Close,
+    Open(String),
+    Select(String),
+}
+
 pub struct Detail {
     pub key: String,
     pub card: CardDetail,
@@ -15,6 +22,7 @@ pub struct Detail {
     pub body: text_editor::Content,
     pub comment: String,
     pub dirty: bool,
+    pub leaving: Option<Leave>,
 }
 
 impl Detail {
@@ -26,6 +34,7 @@ impl Detail {
             body: text_editor::Content::with_text(&card.card.body),
             comment: String::new(),
             dirty: false,
+            leaving: None,
             card,
         }
     }
@@ -142,7 +151,33 @@ impl Detail {
             moves = moves.push(move_button("Next →", Message::Step(true)));
         }
 
-        let mut content = column![header, edit, rule::horizontal(1), label("PLAN"), plan];
+        let mut content = column![];
+        if self.leaving.is_some() {
+            content = content.push(
+                row![
+                    text("Unsaved changes").color(theme::WARNING),
+                    button(text("Save"))
+                        .on_press_maybe(
+                            (!self.title.trim().is_empty()).then_some(Message::SaveAndLeave),
+                        )
+                        .style(theme::button(false)),
+                    button(text("Discard"))
+                        .on_press(Message::DiscardAndLeave)
+                        .style(theme::button(false)),
+                    button(text("Keep editing"))
+                        .on_press(Message::KeepEditing)
+                        .style(theme::button(false)),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center),
+            );
+        }
+        content = content
+            .push(header)
+            .push(edit)
+            .push(rule::horizontal(1))
+            .push(label("PLAN"))
+            .push(plan);
         if !meta.is_empty() {
             content = content.push(text(meta.join(" · ")).color(theme::TEXT_MUTED));
         }
