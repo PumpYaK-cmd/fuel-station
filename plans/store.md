@@ -1,6 +1,6 @@
 # Store: SQLite schema, migrations, card operations (card eb462b24)
 
-base: <filled by agent>
+base: befcc012c8612c1f3b38dd3744ea912e997414a5
 
 ## Context
 design.md > Data model, Architecture, MCP server. Crate skeleton is committed; `src/store/`

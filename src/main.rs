@@ -1,6 +1,7 @@
 mod import;
 mod mcp;
 mod setup;
+#[allow(dead_code)]
 mod store;
 mod ui;
 
