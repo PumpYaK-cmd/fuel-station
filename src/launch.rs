@@ -115,7 +115,7 @@ pub fn kill_tree(pid: u32) {
         use std::os::windows::process::CommandExt;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    let _ = command.output();
+    let _ = command.spawn();
 }
 
 #[cfg(test)]

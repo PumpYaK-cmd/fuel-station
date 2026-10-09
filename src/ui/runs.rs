@@ -5,7 +5,7 @@ use iced::Task;
 use iced::futures::SinkExt;
 use iced::futures::channel::mpsc::Sender;
 use iced::task::Handle;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, BufReader};
 
 use super::Message;
 use crate::launch::{self, Line};
@@ -57,7 +57,11 @@ impl Run {
             RunEvent::Out(done) => self.done = Some(done),
             RunEvent::Ended(code) if self.is_running() => return Some(self.finish(code)),
             RunEvent::Ended(_) => {}
-            RunEvent::FailedToStart(e) => self.status = Status::Failed(e),
+            RunEvent::FailedToStart(e) => {
+                let report = format!("Truck failed to start: {e}");
+                self.status = Status::Failed(e);
+                return Some(report);
+            }
         }
         None
     }
@@ -143,16 +147,16 @@ pub fn start(dir: PathBuf, key: String) -> (Task<Message>, Run) {
             return;
         };
         let _ = sender.send(RunEvent::Started(child.id())).await;
-        let mut out = BufReader::new(stdout).lines();
-        let mut err = BufReader::new(stderr).lines();
+        let mut out = BufReader::new(stdout);
+        let mut err = BufReader::new(stderr);
         let (mut out_open, mut err_open) = (true, true);
         while out_open || err_open {
             let (from_out, line) = tokio::select! {
-                line = out.next_line(), if out_open => (true, line),
-                line = err.next_line(), if err_open => (false, line),
+                line = read_line(&mut out), if out_open => (true, line),
+                line = read_line(&mut err), if err_open => (false, line),
             };
             match line {
-                Ok(Some(line)) => {
+                Some(line) => {
                     for parsed in launch::parse(&line) {
                         let _ = sender.send(RunEvent::Out(parsed)).await;
                     }
@@ -174,4 +178,12 @@ pub fn start(dir: PathBuf, key: String) -> (Task<Message>, Run) {
         handle,
     };
     (task, run)
+}
+
+async fn read_line(reader: &mut (impl AsyncBufRead + Unpin)) -> Option<String> {
+    let mut buf = Vec::new();
+    match reader.read_until(b'\n', &mut buf).await {
+        Ok(0) | Err(_) => None,
+        Ok(_) => Some(String::from_utf8_lossy(&buf).trim_end().to_string()),
+    }
 }
