@@ -1,6 +1,6 @@
 # drag: drag-and-drop cards between and within columns (card 9d4e33ee)
 
-base: (set at claim)
+base: fbcb67179955f74d56b87acc10067be39f31af62
 
 ## Context
 `src/ui/mod.rs`: `card_box` wraps each card in a `mouse_area` whose `on_press` opens the

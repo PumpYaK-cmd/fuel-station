@@ -115,6 +115,15 @@ struct App {
     last_event: i64,
     search: String,
     filter: Filter,
+    drag: Option<Drag>,
+}
+
+struct Drag {
+    key: String,
+    from: Column,
+    over: Option<Column>,
+    before: Option<String>,
+    moved: bool,
 }
 
 const SEARCH_ID: &str = "search";
@@ -157,7 +166,6 @@ enum Message {
     SelectProject(String),
     Tick,
     ThemeChanged(Theme),
-    OpenCard(String),
     CloseDetail,
     Escape,
     TitleEdited(String),
@@ -185,8 +193,12 @@ enum Message {
     Minimize,
     ToggleMaximize,
     Close,
-    HoverCard(String),
-    UnhoverCard(String),
+    Press(String),
+    EnterCard(String),
+    ExitCard(String),
+    EnterColumn(Column),
+    DropOn(Column),
+    CancelDrag,
     Focus(bool),
     Search(String),
     FilterChanged(Filter),
@@ -247,6 +259,7 @@ fn open() -> State {
         last_event: 0,
         search: String::new(),
         filter: Filter::All,
+        drag: None,
     };
     app.reload(None);
     match app.store.last_event_id() {
@@ -286,12 +299,6 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             return app.tray_task();
         }
         Message::ThemeChanged(theme) => app.theme = theme,
-        Message::OpenCard(key) => {
-            if app.detail.as_ref().is_some_and(|d| d.key == key) {
-                return Task::none();
-            }
-            return request_leave(app, Leave::Open(key));
-        }
         Message::CloseDetail => return request_leave(app, Leave::Close),
         Message::Escape => match &mut app.detail {
             Some(d) if d.leaving.is_some() => d.leaving = None,
@@ -466,12 +473,71 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             return app.window.map_or_else(Task::none, window::toggle_maximize);
         }
         Message::Close => return request_leave(app, Leave::Quit),
-        Message::HoverCard(key) => app.hovered = Some(key),
-        Message::UnhoverCard(key) => {
+        Message::Press(key) => {
+            if let Some(card) = app.board.iter().find(|c| c.key == key) {
+                app.drag = Some(Drag {
+                    key,
+                    from: card.column,
+                    over: Some(card.column),
+                    before: None,
+                    moved: false,
+                });
+            }
+        }
+        Message::EnterCard(key) => {
+            let column = app.board.iter().find(|c| c.key == key).map(|c| c.column);
+            if let (Some(drag), Some(column)) = (&mut app.drag, column) {
+                drag.moved |= key != drag.key;
+                drag.over = Some(column);
+                drag.before = Some(key.clone());
+            }
+            app.hovered = Some(key);
+        }
+        Message::ExitCard(key) => {
             if app.hovered.as_ref() == Some(&key) {
                 app.hovered = None;
             }
+            if let Some(drag) = &mut app.drag
+                && drag.before.as_ref() == Some(&key)
+            {
+                drag.before = None;
+            }
         }
+        Message::EnterColumn(col) => {
+            if let Some(drag) = &mut app.drag
+                && drag.over != Some(col)
+            {
+                drag.over = Some(col);
+                drag.before = None;
+                drag.moved = true;
+            }
+        }
+        Message::DropOn(col) => {
+            let Some(drag) = app.drag.take() else {
+                return Task::none();
+            };
+            if !drag.moved {
+                if app.detail.as_ref().is_some_and(|d| d.key == drag.key) {
+                    return Task::none();
+                }
+                return request_leave(app, Leave::Open(drag.key));
+            }
+            let cards: Vec<&CardSummary> = app.board.iter().filter(|c| c.column == col).collect();
+            let index = drop_index(&cards, &drag.key, drag.before.as_deref());
+            let current = cards.iter().position(|c| c.key == drag.key);
+            let others = cards.len() - usize::from(current.is_some());
+            if col != drag.from {
+                let mut result = app.store.card_move(&drag.key, &manager(), col);
+                if result.is_ok() && index < others {
+                    result = app.store.card_reorder(&drag.key, &manager(), index as i64);
+                }
+                app.after_write(result);
+            } else if current != Some(index) {
+                let result = app.store.card_reorder(&drag.key, &manager(), index as i64);
+                app.after_write(result);
+            }
+        }
+        Message::CancelDrag => app.drag = None,
         Message::Focus(focused) => app.focused = focused,
         Message::Search(search) => app.search = search,
         Message::FilterChanged(filter) => app.filter = filter,
@@ -620,6 +686,18 @@ fn subscription(state: &State) -> Subscription<Message> {
                         ..
                     }) => Some(Message::Search(String::new())),
                     _ => None,
+                }));
+            }
+            if app.drag.is_some() {
+                // Column releases are not captured, so this also fires after DropOn; DropOn wins because widget messages run before subscription output.
+                subs.push(iced::event::listen_with(|event, status, _| {
+                    match (event, status) {
+                        (
+                            iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
+                            iced::event::Status::Ignored,
+                        ) => Some(Message::CancelDrag),
+                        _ => None,
+                    }
                 }));
             }
             Subscription::batch(subs)
@@ -939,6 +1017,8 @@ impl App {
         .spacing(8)
         .align_y(Alignment::Center);
         let open = self.detail.as_ref().map(|d| d.key.as_str());
+        let dragging = self.drag.as_ref();
+        let target = dragging.filter(|d| d.moved && d.over == Some(col));
         let list = scrollable(
             column(cards.into_iter().map(|card| {
                 let flash = self
@@ -951,6 +1031,10 @@ impl App {
                     open == Some(card.key.as_str()),
                     self.hovered.as_deref() == Some(card.key.as_str()),
                     flash,
+                    dragging.is_some_and(|d| d.key == card.key),
+                    target.is_some_and(|d| {
+                        d.key != card.key && d.before.as_deref() == Some(card.key.as_str())
+                    }),
                 )
             }))
             .spacing(6),
@@ -963,6 +1047,10 @@ impl App {
             .height(Length::Fill)
             .style(theme::glass);
         let brackets = match col {
+            _ if target.is_some() => fx::Brackets {
+                color: theme::ACCENT,
+                alpha: 1.0,
+            },
             Column::Doing => fx::Brackets {
                 color: theme::PRIMARY,
                 alpha: 0.7 + 0.3 * (self.t * PI).sin(),
@@ -972,12 +1060,16 @@ impl App {
                 alpha: 1.0,
             },
         };
-        stack![
-            panel,
-            canvas(brackets).width(Length::Fill).height(Length::Fill)
-        ]
-        .width(Length::Fill)
-        .height(Length::Fill)
+        mouse_area(
+            stack![
+                panel,
+                canvas(brackets).width(Length::Fill).height(Length::Fill)
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill),
+        )
+        .on_enter(Message::EnterColumn(col))
+        .on_release(Message::DropOn(col))
         .into()
     }
 
@@ -1051,6 +1143,8 @@ fn card_box(
     selected: bool,
     hovered: bool,
     flash: Option<f32>,
+    dragged: bool,
+    drop_before: bool,
 ) -> Element<'_, Message> {
     let mut top = row![text(&card.key).color(theme::TEXT_MUTED)];
     if let Some(tier) = &card.tier {
@@ -1066,7 +1160,9 @@ fn card_box(
                 .color(theme::ACCENT),
         );
     }
-    let bar = if selected {
+    let bar = if dragged {
+        theme::PRIMARY
+    } else if selected {
         theme::ACCENT
     } else if card.human {
         theme::WARNING
@@ -1077,7 +1173,9 @@ fn card_box(
     } else {
         theme::BORDER_STRONG
     };
-    let border = if selected {
+    let border = if dragged {
+        theme::PRIMARY
+    } else if selected {
         theme::ACCENT
     } else if card.human {
         theme::WARNING
@@ -1092,16 +1190,43 @@ fn card_box(
         container(body).padding(8).width(Length::Fill),
     ]
     .height(Length::Shrink);
-    mouse_area(
+    let mut boxed = column![];
+    if drop_before {
+        boxed = boxed.push(
+            container(space())
+                .width(Length::Fill)
+                .height(2)
+                .style(theme::fill(theme::ACCENT)),
+        );
+    }
+    let boxed = boxed.push(
         container(content)
             .width(Length::Fill)
             .style(theme::card(border)),
-    )
-    .on_press(Message::OpenCard(card.key.clone()))
-    .on_enter(Message::HoverCard(card.key.clone()))
-    .on_exit(Message::UnhoverCard(card.key.clone()))
-    .interaction(mouse::Interaction::Pointer)
-    .into()
+    );
+    mouse_area(boxed)
+        .on_press(Message::Press(card.key.clone()))
+        .on_enter(Message::EnterCard(card.key.clone()))
+        .on_exit(Message::ExitCard(card.key.clone()))
+        .interaction(if dragged {
+            mouse::Interaction::Grabbing
+        } else {
+            mouse::Interaction::Pointer
+        })
+        .into()
+}
+
+fn drop_index(cards: &[&CardSummary], dragged: &str, before: Option<&str>) -> usize {
+    let mut index = 0;
+    for card in cards {
+        if Some(card.key.as_str()) == before {
+            return index;
+        }
+        if card.key != dragged {
+            index += 1;
+        }
+    }
+    index
 }
 
 fn local_time(secs: i64, format: &str) -> String {
@@ -1176,5 +1301,49 @@ mod tests {
         assert!(card_matches(&c, "search", &Filter::Human));
         assert!(!card_matches(&c, "other", &Filter::Human));
         assert!(!card_matches(&c, "search", &Filter::Held));
+    }
+
+    fn index(keys: &[&str], dragged: &str, before: Option<&str>) -> usize {
+        let cards: Vec<CardSummary> = keys
+            .iter()
+            .enumerate()
+            .map(|(i, key)| CardSummary {
+                key: key.to_string(),
+                title: String::new(),
+                column: Column::Ready,
+                position: i as i64,
+                tier: None,
+                human: false,
+                holder: None,
+            })
+            .collect();
+        let refs: Vec<&CardSummary> = cards.iter().collect();
+        drop_index(&refs, dragged, before)
+    }
+
+    #[test]
+    fn drop_before_first() {
+        assert_eq!(index(&["A", "B", "C"], "X", Some("A")), 0);
+    }
+
+    #[test]
+    fn drop_before_middle() {
+        assert_eq!(index(&["A", "B", "C"], "X", Some("B")), 1);
+    }
+
+    #[test]
+    fn drop_appends() {
+        assert_eq!(index(&["A", "B", "C"], "X", None), 3);
+    }
+
+    #[test]
+    fn drop_excludes_dragged_card() {
+        assert_eq!(index(&["A", "B", "C"], "A", Some("C")), 1);
+        assert_eq!(index(&["A", "B", "C"], "A", None), 2);
+    }
+
+    #[test]
+    fn drop_before_dragged_keeps_its_place() {
+        assert_eq!(index(&["A", "B", "C"], "B", Some("B")), 1);
     }
 }
