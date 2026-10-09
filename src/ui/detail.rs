@@ -58,7 +58,9 @@ impl Detail {
                 .on_action(Message::BodyAction)
                 .height(160),
             button(text("Save"))
-                .on_press_maybe(self.dirty.then_some(Message::Save))
+                .on_press_maybe(
+                    (self.dirty && !self.title.trim().is_empty()).then_some(Message::Save),
+                )
                 .style(theme::button(false)),
         ]
         .spacing(6);

@@ -55,6 +55,7 @@ enum Message {
     ThemeChanged(Theme),
     OpenCard(String),
     CloseDetail,
+    Escape,
     TitleEdited(String),
     BodyAction(text_editor::Action),
     Save,
@@ -114,6 +115,11 @@ fn update(state: &mut State, message: Message) {
             Err(e) => app.error = Some(e.to_string()),
         },
         Message::CloseDetail => app.detail = None,
+        Message::Escape => {
+            if app.detail.as_ref().is_some_and(|d| !d.dirty) {
+                app.detail = None;
+            }
+        }
         Message::TitleEdited(title) => {
             if let Some(d) = &mut app.detail {
                 d.title = title;
@@ -130,11 +136,19 @@ fn update(state: &mut State, message: Message) {
             let Some(d) = &mut app.detail else {
                 return;
             };
+            if d.title.trim().is_empty() {
+                return;
+            }
+            let body = d.body.text();
             let patch = CardPatch {
-                title: Some(d.title.clone()),
-                body: Some(d.body.text()),
+                title: (d.title != d.card.card.title).then(|| d.title.clone()),
+                body: (body != d.card.card.body).then_some(body),
                 ..CardPatch::default()
             };
+            if patch.title.is_none() && patch.body.is_none() {
+                d.dirty = false;
+                return;
+            }
             let result = app.store.card_update(&d.key, &manager(), &patch);
             if result.is_ok() {
                 d.dirty = false;
@@ -206,10 +220,12 @@ fn subscription(state: &State) -> Subscription<Message> {
                 return tick;
             }
             let keys = keyboard::listen().filter_map(|event| match event {
-                keyboard::Event::KeyPressed { key, .. } => match key {
+                keyboard::Event::KeyPressed {
+                    key, repeat: false, ..
+                } => match key {
                     Key::Named(Named::ArrowLeft) => Some(Message::Step(false)),
                     Key::Named(Named::ArrowRight) => Some(Message::Step(true)),
-                    Key::Named(Named::Escape) => Some(Message::CloseDetail),
+                    Key::Named(Named::Escape) => Some(Message::Escape),
                     _ => None,
                 },
                 _ => None,
@@ -248,7 +264,10 @@ impl App {
 
     fn after_write<T>(&mut self, result: store::Result<T>) {
         match result {
-            Ok(_) => self.reload(self.selected.clone()),
+            Ok(_) => {
+                self.error = None;
+                self.reload(self.selected.clone());
+            }
             Err(e) => self.error = Some(e.to_string()),
         }
     }

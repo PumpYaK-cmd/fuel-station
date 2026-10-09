@@ -8,7 +8,7 @@ pub fn view(events: &[Event]) -> Element<'_, Message> {
     let list = column(events.iter().map(|e| {
         let color = match e.kind.as_str() {
             "report" => theme::TEXT,
-            "review_result" if e.message.contains("findings") => theme::DANGER,
+            "review_result" if !e.message.ends_with("Review: clean") => theme::DANGER,
             "ship" => theme::SUCCESS,
             _ => theme::TEXT_MUTED,
         };
