@@ -1,6 +1,6 @@
 # GUI: card detail panel + activity feed and agents strip (cards cfff76f1, dc108a27)
 
-base: <filled by agent>
+base: 9b02f45770e9611c7083883374aba1e53b0679a6
 
 Two cards, one agent, one plan: both edit the same `App` in `src/ui/mod.rs`. Ship them as
 one commit series; paperwork on both cards.

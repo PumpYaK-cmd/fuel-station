@@ -34,7 +34,11 @@ pub fn theme() -> Theme {
 
 pub fn button(selected: bool) -> impl Fn(&Theme, widget::button::Status) -> widget::button::Style {
     move |_theme, status| {
-        let color = if selected { ACCENT } else { PRIMARY };
+        let color = match (selected, status) {
+            (_, widget::button::Status::Disabled) => TEXT_MUTED,
+            (true, _) => ACCENT,
+            (false, _) => PRIMARY,
+        };
         widget::button::Style {
             background: (status == widget::button::Status::Hovered).then(|| SURFACE_HOVER.into()),
             text_color: color,
@@ -58,19 +62,22 @@ pub fn panel(_theme: &Theme) -> container::Style {
         })
 }
 
-pub fn card_box(warning: bool) -> impl Fn(&Theme) -> container::Style {
+pub fn card_box(warning: bool, selected: bool) -> impl Fn(&Theme) -> container::Style {
     move |theme| {
         let style = panel(theme);
-        if warning {
-            container::Style {
-                border: Border {
-                    color: WARNING,
-                    ..style.border
-                },
-                ..style
-            }
+        let color = if selected {
+            ACCENT
+        } else if warning {
+            WARNING
         } else {
-            style
+            return style;
+        };
+        container::Style {
+            border: Border {
+                color,
+                ..style.border
+            },
+            ..style
         }
     }
 }
