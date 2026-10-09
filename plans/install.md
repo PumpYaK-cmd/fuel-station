@@ -1,6 +1,6 @@
 # Install command and exe location (card 7faab330)
 
-base: <filled by agent>
+base: 7307b4ec6c3656cc008e688cac02bb884d2672f6
 
 ## Context
 design.md > Architecture > Windows exe lock. Running MCP servers lock the installed exe.
