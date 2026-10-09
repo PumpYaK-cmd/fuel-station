@@ -158,6 +158,8 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             if app.detail.as_ref().is_some_and(|d| d.dirty) && app.selected.as_ref() == Some(&key) {
                 return Task::none();
             }
+            app.sheet = None;
+            app.import = None;
             request_leave(app, Leave::Select(key));
         }
         Message::Tick => {
@@ -195,7 +197,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
         }
         Message::Save => {
-            save(app);
+            if save(app)
+                && let Some(d) = &mut app.detail
+            {
+                d.leaving = None;
+            }
         }
         Message::SaveAndLeave => {
             if save(app)
@@ -361,11 +367,7 @@ fn leave(app: &mut App, target: Leave) {
             Ok(card) => app.detail = Some(Detail::new(card)),
             Err(e) => app.error = Some(e.to_string()),
         },
-        Leave::Select(key) => {
-            app.sheet = None;
-            app.import = None;
-            app.reload(Some(key));
-        }
+        Leave::Select(key) => app.reload(Some(key)),
     }
 }
 

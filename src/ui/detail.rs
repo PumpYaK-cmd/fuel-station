@@ -151,33 +151,27 @@ impl Detail {
             moves = moves.push(move_button("Next →", Message::Step(true)));
         }
 
-        let mut content = column![];
-        if self.leaving.is_some() {
-            content = content.push(
-                row![
-                    text("Unsaved changes").color(theme::WARNING),
-                    button(text("Save"))
-                        .on_press_maybe(
-                            (!self.title.trim().is_empty()).then_some(Message::SaveAndLeave),
-                        )
-                        .style(theme::button(false)),
-                    button(text("Discard"))
-                        .on_press(Message::DiscardAndLeave)
-                        .style(theme::button(false)),
-                    button(text("Keep editing"))
-                        .on_press(Message::KeepEditing)
-                        .style(theme::button(false)),
-                ]
-                .spacing(6)
-                .align_y(Alignment::Center),
-            );
-        }
-        content = content
-            .push(header)
-            .push(edit)
-            .push(rule::horizontal(1))
-            .push(label("PLAN"))
-            .push(plan);
+        let bar = self.leaving.is_some().then(|| {
+            row![
+                text("Unsaved changes").color(theme::WARNING),
+                button(text("Save"))
+                    .on_press_maybe(
+                        (!self.title.trim().is_empty()).then_some(Message::SaveAndLeave),
+                    )
+                    .style(theme::button(false)),
+                button(text("Discard"))
+                    .on_press(Message::DiscardAndLeave)
+                    .style(theme::button(false)),
+                button(text("Keep editing"))
+                    .on_press(Message::KeepEditing)
+                    .style(theme::button(false)),
+            ]
+            .spacing(6)
+            .padding(10)
+            .align_y(Alignment::Center)
+        });
+
+        let mut content = column![header, edit, rule::horizontal(1), label("PLAN"), plan];
         if !meta.is_empty() {
             content = content.push(text(meta.join(" · ")).color(theme::TEXT_MUTED));
         }
@@ -195,9 +189,11 @@ impl Detail {
             .padding(10);
 
         container(
-            scrollable(content)
-                .direction(theme::thin())
-                .style(theme::scrollbar),
+            column![].extend(bar.map(Element::from)).push(
+                scrollable(content)
+                    .direction(theme::thin())
+                    .style(theme::scrollbar),
+            ),
         )
         .width(440)
         .height(Length::Fill)
