@@ -30,6 +30,7 @@ struct App {
     data_version: i64,
     error: Option<String>,
     theme: Theme,
+    themes: Vec<Theme>,
 }
 
 #[derive(Debug, Clone)]
@@ -50,8 +51,11 @@ fn boot() -> State {
         data_version: 0,
         error: None,
         theme: theme::theme(),
+        themes: std::iter::once(theme::theme())
+            .chain(Theme::ALL.iter().cloned())
+            .collect(),
     };
-    app.reload();
+    app.reload(None);
     Ok(app)
 }
 
@@ -60,13 +64,10 @@ fn update(state: &mut State, message: Message) {
         return;
     };
     match message {
-        Message::SelectProject(key) => {
-            app.selected = Some(key);
-            app.reload();
-        }
+        Message::SelectProject(key) => app.reload(Some(key)),
         Message::Tick => match app.store.data_version() {
-            Ok(version) if version != app.data_version => app.reload(),
-            Ok(_) => {}
+            Ok(version) if version != app.data_version => app.reload(app.selected.clone()),
+            Ok(_) => app.error = None,
             Err(e) => app.error = Some(e.to_string()),
         },
         Message::ThemeChanged(theme) => app.theme = theme,
@@ -95,26 +96,25 @@ fn app_theme(state: &State) -> Theme {
 }
 
 impl App {
-    fn reload(&mut self) {
-        if let Err(e) = self.try_reload() {
+    fn reload(&mut self, selected: Option<String>) {
+        if let Err(e) = self.try_reload(selected) {
             self.error = Some(e.to_string());
         }
     }
 
-    fn try_reload(&mut self) -> store::Result<()> {
+    fn try_reload(&mut self, selected: Option<String>) -> store::Result<()> {
         let version = self.store.data_version()?;
-        self.projects = self.store.projects()?;
-        if !self
-            .projects
-            .iter()
-            .any(|p| self.selected.as_ref() == Some(&p.key))
-        {
-            self.selected = self.projects.first().map(|p| p.key.clone());
-        }
-        self.board = match &self.selected {
+        let projects = self.store.projects()?;
+        let selected = selected
+            .filter(|key| projects.iter().any(|p| &p.key == key))
+            .or_else(|| projects.first().map(|p| p.key.clone()));
+        let board = match &selected {
             Some(key) => self.store.board(key, None)?,
             None => Vec::new(),
         };
+        self.projects = projects;
+        self.selected = selected;
+        self.board = board;
         self.data_version = version;
         self.error = None;
         Ok(())
@@ -198,11 +198,8 @@ impl App {
         if let Some(e) = &self.error {
             status = status.push(text(e).color(theme::DANGER));
         }
-        let themes: Vec<Theme> = std::iter::once(theme::theme())
-            .chain(Theme::ALL.iter().cloned())
-            .collect();
         container(status.push(space::horizontal()).push(pick_list(
-            themes,
+            self.themes.as_slice(),
             Some(&self.theme),
             Message::ThemeChanged,
         )))
