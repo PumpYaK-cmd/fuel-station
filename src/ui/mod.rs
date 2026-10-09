@@ -256,8 +256,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::CloseDetail => request_leave(app, Leave::Close),
         Message::Escape => match &mut app.detail {
             Some(d) if d.leaving.is_some() => d.leaving = None,
-            Some(_) => request_leave(app, Leave::Close),
-            None => app.search.clear(),
+            _ => request_leave(app, Leave::Close),
         },
         Message::TitleEdited(title) => {
             if let Some(d) = &mut app.detail {
@@ -488,7 +487,7 @@ fn view(state: &State) -> Element<'_, Message> {
 
 fn subscription(state: &State) -> Subscription<Message> {
     match state {
-        Ok(_) => {
+        Ok(app) => {
             let tick = iced::time::every(Duration::from_millis(300)).map(|_| Message::Tick);
             let frames = window::frames().map(Message::Frame);
             let focus = window::events().filter_map(|(_, event)| match event {
@@ -496,24 +495,42 @@ fn subscription(state: &State) -> Subscription<Message> {
                 window::Event::Unfocused => Some(Message::Focus(false)),
                 _ => None,
             });
-            let keys = keyboard::listen().filter_map(|event| match event {
+            let find = keyboard::listen().filter_map(|event| match event {
                 keyboard::Event::KeyPressed {
                     key,
+                    physical_key,
                     modifiers,
                     repeat: false,
                     ..
-                } => match key {
-                    Key::Character(c) if modifiers.command() && c.eq_ignore_ascii_case("f") => {
-                        Some(Message::FocusSearch)
-                    }
-                    Key::Named(Named::ArrowLeft) => Some(Message::Step(false)),
-                    Key::Named(Named::ArrowRight) => Some(Message::Step(true)),
-                    Key::Named(Named::Escape) => Some(Message::Escape),
-                    _ => None,
-                },
+                } if modifiers.command() && key.to_latin(physical_key) == Some('f') => {
+                    Some(Message::FocusSearch)
+                }
                 _ => None,
             });
-            Subscription::batch([tick, frames, focus, keys])
+            let mut subs = vec![tick, frames, focus, find];
+            if app.detail.is_some() {
+                subs.push(keyboard::listen().filter_map(|event| match event {
+                    keyboard::Event::KeyPressed {
+                        key, repeat: false, ..
+                    } => match key {
+                        Key::Named(Named::ArrowLeft) => Some(Message::Step(false)),
+                        Key::Named(Named::ArrowRight) => Some(Message::Step(true)),
+                        Key::Named(Named::Escape) => Some(Message::Escape),
+                        _ => None,
+                    },
+                    _ => None,
+                }));
+            } else if app.sheet.is_none() && app.import.is_none() {
+                subs.push(iced::event::listen_with(|event, _, _| match event {
+                    iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                        key: Key::Named(Named::Escape),
+                        repeat: false,
+                        ..
+                    }) => Some(Message::Search(String::new())),
+                    _ => None,
+                }));
+            }
+            Subscription::batch(subs)
         }
         Err(_) => Subscription::none(),
     }
