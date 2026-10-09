@@ -44,6 +44,10 @@ src/mcp prompts.
   - Keep the rules (one card per session, `[HUMAN]` cards skipped, triage block, rebase
     + gate before ship, out-of-scope -> Backlog card, hand-over style). Drop trello CLI
     lines and `plans/` mechanics. No em dashes.
+- Card 47223a8d folded in: tools take `Column` lowercase only but print and document
+  `Ready`. In `src/store/model.rs` add `#[serde(alias = "Backlog")]` etc. on each `Column`
+  variant (capitalised form accepted, schema unchanged) and a tools test that `board`
+  accepts `"Ready"`. Prompts may then write columns either way.
 - `src/mcp/mod.rs`: `#[prompt_router]` with the four prompts; descriptions one line each.
 
 ## Tests
@@ -60,4 +64,4 @@ Agent files, Station launching agents (v2).
 
 Tier:  2 implementer-high. Why: porting runbook text is judgment-heavy; the prompts are the workflow.
 Gate:  cargo fmt/clippy/test + stdio smoke. Why: in-Claude behaviour is manual.
-Scope: src/mcp (mod.rs + 4 md files). Asks: none
+Scope: src/mcp (mod.rs + 4 md files), Column serde aliases in store/model.rs. Asks: none
