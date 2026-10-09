@@ -1,3 +1,5 @@
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
+
 mod import;
 mod mcp;
 mod setup;
@@ -42,7 +44,20 @@ fn import_trello(dir: Option<PathBuf>) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn attach_parent_console() {
+    unsafe extern "system" {
+        fn AttachConsole(process_id: u32) -> i32;
+    }
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    unsafe { AttachConsole(ATTACH_PARENT_PROCESS) };
+}
+
 fn main() {
+    #[cfg(windows)]
+    if std::env::args_os().nth(1).is_some_and(|arg| arg != "mcp") {
+        attach_parent_console();
+    }
     let cli = Cli::parse();
     if !matches!(cli.command, Some(Command::Mcp { .. }))
         && std::env::var_os("LOCALAPPDATA").is_some()
