@@ -53,7 +53,20 @@ fn main() {
         None => ui::run(),
         Some(Command::Mcp { project }) => mcp::run(&project),
         Some(Command::Install) => match setup::install::install() {
-            Ok(path) => println!("installed {}", path.display()),
+            Ok(path) => {
+                println!("installed {}", path.display());
+                match setup::agents::install_agents(&setup::agents::agents_dir()) {
+                    Ok(actions) => {
+                        for (file, action) in actions {
+                            println!("agent {file}: {action}");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("install failed: {e}");
+                        std::process::exit(1);
+                    }
+                }
+            }
             Err(e) => {
                 eprintln!("install failed: {e}");
                 std::process::exit(1);

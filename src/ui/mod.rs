@@ -5,6 +5,7 @@ use std::time::Duration;
 use iced::widget::{button, column, container, pick_list, row, rule, scrollable, space, text};
 use iced::{Alignment, Element, Length, Subscription, Theme};
 
+use crate::setup::agents;
 use crate::store::{self, CardSummary, Column, Project, Role, Store};
 
 pub fn run() {
@@ -56,6 +57,9 @@ fn boot() -> State {
             .collect(),
     };
     app.reload(None);
+    if let Err(e) = agents::install_agents(&agents::agents_dir()) {
+        app.error = Some(format!("agent files: {e}"));
+    }
     Ok(app)
 }
 

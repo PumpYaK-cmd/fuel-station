@@ -1,6 +1,6 @@
 # Agent files: fuel, fuel-high, mechanic (card 456577bc)
 
-base: <filled by agent>
+base: 9b02f45770e9611c7083883374aba1e53b0679a6
 
 ## Context
 design.md > Agents. Sources: `~/.claude/agents/implementer.md`, `implementer-high.md`,
