@@ -29,27 +29,33 @@ pub fn install_to(src: &Path, dir: &Path) -> io::Result<PathBuf> {
     if same_file(src, &dest) {
         return Ok(dest);
     }
-    let old = dir.join(OLD_EXE);
-    let _ = fs::remove_file(&old);
-    if dest.exists() && fs::copy(src, &dest).is_err() && fs::rename(&dest, &old).is_err() {
+    let _ = fs::remove_file(dir.join(OLD_EXE));
+    if dest.exists() {
+        if fs::copy(src, &dest).is_ok() {
+            return Ok(dest);
+        }
         let secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        fs::rename(&dest, dir.join(format!("fuel-station.old-{secs}.exe")))?;
+        let aside = if dir.join(OLD_EXE).exists() {
+            dir.join(format!("fuel-station.old-{secs}.exe"))
+        } else {
+            dir.join(OLD_EXE)
+        };
+        fs::rename(&dest, &aside)?;
+        if let Err(e) = fs::copy(src, &dest) {
+            let _ = fs::rename(&aside, &dest);
+            return Err(e);
+        }
+        return Ok(dest);
     }
     fs::copy(src, &dest)?;
     Ok(dest)
 }
 
 pub fn install() -> io::Result<PathBuf> {
-    let src = std::env::current_exe()?;
-    let dir = bin_dir();
-    if same_file(&src, &dir.join(EXE)) {
-        println!("already installed");
-        return Ok(dir.join(EXE));
-    }
-    install_to(&src, &dir)
+    install_to(&std::env::current_exe()?, &bin_dir())
 }
 
 pub fn cleanup_old(dir: &Path) {

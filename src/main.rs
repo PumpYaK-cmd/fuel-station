@@ -25,7 +25,9 @@ enum Command {
 
 fn main() {
     let cli = Cli::parse();
-    if !matches!(cli.command, Some(Command::Mcp { .. })) {
+    if !matches!(cli.command, Some(Command::Mcp { .. }))
+        && std::env::var_os("LOCALAPPDATA").is_some()
+    {
         setup::install::cleanup_old(&setup::install::bin_dir());
     }
     match cli.command {
