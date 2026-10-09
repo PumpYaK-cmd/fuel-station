@@ -1,0 +1,103 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Fuel Station - Docking Bay</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0A0E14;--surface:#0F1520;--hover:#151D2B;--border:#1C2636;--border2:#2A3A52;--text:#C8D3E6;--muted:#5E6E88;--primary:#3D8BFF;--accent:#6CC4FF;--ok:#2FD3A0;--warn:#F0B44C;--bad:#FF5C6C}
+html,body{height:100%;background:var(--bg);color:var(--text);font:13px/1.35 "JetBrainsMono Nerd Font","JetBrainsMonoNerdFont-Regular","JetBrains Mono",ui-monospace,monospace;overflow:hidden}
+body{display:flex;flex-direction:column;position:relative}
+.bg{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+.titlebar,.shell,footer{position:relative;z-index:1}
+.titlebar{height:36px;display:flex;align-items:center;gap:24px;padding:0 0 0 16px;font-size:12px;letter-spacing:.08em;user-select:none}
+.brand{color:var(--text);display:flex;gap:8px;align-items:center}
+.brand .logo{color:var(--accent)}
+.crumb{color:var(--muted)}
+.spacer{flex:1}
+.dot{color:var(--muted)}
+.agents{color:var(--muted);display:flex;gap:14px;align-items:center}
+.agents .agent{color:var(--accent);letter-spacing:0}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 rgba(108,196,255,.6);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(108,196,255,.6)}70%{box-shadow:0 0 0 8px rgba(108,196,255,0)}100%{box-shadow:0 0 0 0 rgba(108,196,255,0)}}
+.win{display:flex;height:100%}
+.win span{width:46px;display:grid;place-items:center;color:var(--muted);transition:background .15s,color .15s}
+.win span:hover{background:var(--hover);color:var(--text)}
+.win .close:hover{background:var(--bad);color:#fff}
+.shell{flex:1;display:flex;min-height:0}
+.sidebar{width:200px;padding:20px 16px;display:flex;flex-direction:column;gap:20px;border-right:1px solid var(--border)}
+.projects{display:flex;flex-direction:column;gap:6px;flex:1}
+.proj,.btn{background:none;border:1px solid var(--primary);color:var(--primary);border-radius:2px;padding:4px 8px;font:inherit;text-align:center;cursor:pointer;transition:background .15s,transform .15s,box-shadow .3s}
+.proj:hover,.btn:hover{background:var(--hover)}
+.proj.sel{border-color:var(--accent);color:var(--accent)}
+.btn.small{padding:2px 8px}
+main{flex:1;display:flex;flex-direction:column;gap:14px;padding:16px 20px 12px;min-width:0}
+.board-head{display:flex;align-items:center;gap:20px}
+h1{font-size:13px;font-weight:normal}
+.board{flex:1;display:grid;grid-template-columns:repeat(5,1fr);gap:10px;min-height:0}
+.col{background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:10px;display:flex;flex-direction:column;gap:10px;min-height:0;position:relative}
+.col header{display:flex;gap:8px;align-items:baseline}
+.col .count{color:var(--muted)}
+.gauge{display:none}
+.col.review .name{color:var(--warn)} .col.done .name{color:var(--ok)}
+.list{overflow:hidden;display:flex;flex-direction:column;gap:6px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:8px;cursor:pointer;transition:border-color .15s,background .15s,transform .15s;animation:rise .4s both;animation-delay:calc(var(--i)*40ms)}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.card:hover{background:var(--hover);border-color:var(--border2)}
+.card .top{display:flex;justify-content:space-between;color:var(--muted);margin-bottom:4px}
+.card.human{border-color:var(--warn)} .card.selected{border-color:var(--accent)}
+.holder{color:var(--accent);margin-top:4px}
+.activity{height:150px;background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.activity header{display:flex;gap:10px;align-items:baseline}
+.live{color:var(--ok);font-size:10px;letter-spacing:.1em;animation:blink 1.6s steps(1) infinite}
+@keyframes blink{50%{opacity:.25}}
+.ev{display:flex;gap:10px;animation:rise .4s both}
+.ev .t{color:var(--muted)} .ev .glyph{color:var(--accent)} .ev .k{width:70px;color:var(--text)}
+.ev.ok .m{color:var(--ok)} .ev.bad .m{color:var(--bad)} .ev.muted .m{color:var(--muted)}
+footer{display:flex;align-items:center;gap:20px;padding:8px 20px;border-top:1px solid var(--border);color:var(--muted);font-size:12px}
+
+.bg{background:var(--bg)}
+.grid{position:absolute;inset:0;background-image:linear-gradient(#2A3A5280 1px,transparent 1px),linear-gradient(90deg,#2A3A5280 1px,transparent 1px);background-size:40px 40px;-webkit-mask-image:radial-gradient(ellipse at 50% 40%,#000 30%,transparent 80%);mask-image:radial-gradient(ellipse at 50% 40%,#000 30%,transparent 80%)}
+.sweep{position:absolute;left:0;right:0;top:0;background:linear-gradient(180deg,transparent 0,#3D8BFF14 50%,transparent 100%);height:200px;animation:sweep 9s linear infinite}
+@keyframes sweep{from{transform:translateY(-200px)}to{transform:translateY(110vh)}}
+.titlebar{border-bottom:1px solid var(--border);background:var(--surface);font-size:11px}
+.titlebar .crumb::before{content:"BAY ";color:var(--primary)}
+.col{background:#0F1520EE;border-color:transparent}
+.col::before,.col::after,.col .list::before,.col .list::after{content:"";position:absolute;width:12px;height:12px;border:1px solid var(--border2);pointer-events:none}
+.col::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.col::after{top:-1px;right:-1px;border-left:0;border-bottom:0}
+.col .list::before{bottom:-1px;left:-1px;border-right:0;border-top:0}
+.col .list::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+.col.doing::before,.col.doing::after,.col.doing .list::before,.col.doing .list::after{border-color:var(--primary);animation:brk 2s ease-in-out infinite}
+@keyframes brk{50%{opacity:.4}}
+.col header{border-bottom:1px solid var(--border);padding-bottom:8px;letter-spacing:.1em;font-size:11px}
+.gauge{display:block;flex:1;height:3px;background:var(--border);align-self:center;position:relative;overflow:hidden}
+.gauge i{position:absolute;inset:0;transform-origin:left;transform:scaleX(var(--fill));background:var(--primary);animation:fill 1s cubic-bezier(.2,.8,.2,1) both}
+.col.review .gauge i{background:var(--warn)} .col.done .gauge i{background:var(--ok)}
+@keyframes fill{from{transform:scaleX(0)}}
+.card{border-left:2px solid var(--border2);background:#0A0E14}
+.card:hover{border-left-color:var(--primary)}
+.card.selected{border-left-color:var(--accent);border-color:var(--accent)}
+.card.human{border-left-color:var(--warn)}
+.holder{font-size:11px;letter-spacing:.05em}
+.activity{background:#0F1520EE}
+.ev .t::after{content:" \2502";color:var(--border2)}
+footer{background:var(--surface);letter-spacing:.05em;font-size:11px}
+</style></head><body>
+<div class="bg">
+<div class="grid"></div><div class="sweep"></div>
+</div>
+<div class="titlebar">
+  <div class="brand"><span class="logo">8</span> FUEL STATION</div>
+  <div class="spacer"></div>
+  <div class="agents"><span class="pulse"></span> 3 agents <span class="agent">8 fuel-3 YA2-47</span><span class="agent">8 fuel-1 YA2-44</span><span class="agent"> mechanic YA2-132</span></div>
+  <div class="win"><span></span><span></span><span class="close"></span></div>
+</div>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="projects"><button class="proj">comi-revival</button><button class="proj">forge-load</button><button class="proj">fuel-station</button><button class="proj">hwx-clankers</button><button class="proj">kitsu-pen</button><button class="proj">shototsu</button><button class="proj">yak-automotive</button><button class="proj sel">yak-aviation</button></div>
+    <button class="proj add">+ Add Project</button>
+  </aside>
+  <main>
+    <div class="board-head"><h1>YA2 <span class="dot">·</span> yak-aviation</h1><div class="spacer"></div><button class="btn">Repair setup</button></div>
+    <div class="board"><section class="col "><header><span class="name">BACKLOG</span><span class="count">44</span><span class="gauge"><i style="--fill:1.0"></i></span></header><div class="list"><div class="card" style="--i:0"><div class="top"><span class="key">YA2-151</span></div><div class="title">Cockpit aim follow: pick the yaw-limit side from the aim, reset free look correctly</div></div><div class="card" style="--i:1"><div class="top"><span class="key">YA2-150</span></div><div class="title">Blend the elevator at touchdown from the rate law to the stick</div></div><div class="card" style="--i:2"><div class="top"><span class="key">YA2-146</span></div><div class="title">Remove dead LEX level from Vapour.levels</div></div><div class="card" style="--i:3"><div class="top"><span class="key">YA2-144</span></div><div class="title">Control surface clips: visual rate limit lags the physics</div></div><div class="card" style="--i:4"><div class="top"><span class="key">YA2-145</span></div><div class="title">STOVL: thrust step when leaving hover mode 2</div></div><div class="card" style="--i:5"><div class="top"><span class="key">YA2-142</span></div><div class="title">STOVL lift fan vane fore/aft vectoring</div></div><div class="card" style="--i:6"><div class="top"><span class="key">YA2-141</span></div><div class="title">STOVL hover jitter</div></div><div class="card" style="--i:7"><div class="top"><span class="key">YA2-140</span></div><div class="title">Animate SwitchHookStovl cockpit piece</div></div></div></section><section class="col "><header><span class="name">READY</span><span class="count">15</span><span class="gauge"><i style="--fill:0.75"></i></span></header><div class="list"><div class="card" style="--i:0"><div class="top"><span class="key">YA2-16</span><span class="tier">[T2]</span></div><div class="title">4.4 Per-element stall and flat-plate post-stall</div></div><div class="card" style="--i:1"><div class="top"><span class="key">YA2-18</span><span class="tier">[T1]</span></div><div class="title">4.5 Mach effects</div></div><div class="card" style="--i:2"><div class="top"><span class="key">YA2-23</span><span class="tier">[T2]</span></div><div class="title">4.10 Aero tests: C172 known answer, F-35 trim and stall speed</div></div><div class="card" style="--i:3"><div class="top"><span class="key">YA2-19</span><span class="tier">[T1]</span></div><div class="title">4.7 Ground effect</div></div><div class="card" style="--i:4"><div class="top"><span class="key">YA2-24</span><span class="tier">[T1]</span></div><div class="title">5.3 Fuel tanks, consumption, CG shift</div></div><div class="card" style="--i:5"><div class="top"><span class="key">YA2-25</span><span class="tier">[T1]</span></div><div class="title">5.2 Afterburner stages: thrust and fuel flow</div></div></div></section><section class="col doing"><header><span class="name">DOING</span><span class="count">2</span><span class="gauge"><i style="--fill:0.1"></i></span></header><div class="list"><div class="card selected" style="--i:0"><div class="top"><span class="key">YA2-47</span><span class="tier">[T1]</span></div><div class="title">Dump tool drops duplicate-named cfg sections ([FLAPS.0])</div><div class="holder"><span class="glyph">8</span> fuel-3</div></div><div class="card" style="--i:1"><div class="top"><span class="key">YA2-44</span><span class="tier">[T1]</span></div><div class="title">dump_params.py: title from package folder, not 'source'</div><div class="holder"><span class="glyph">8</span> fuel-1</div></div></div></section><section class="col review"><header><span class="name">REVIEW</span><span class="count">1</span><span class="gauge"><i style="--fill:0.05"></i></span></header><div class="list"><div class="card" style="--i:0"><div class="top"><span class="key">YA2-132</span><span class="tier">[T2]</span></div><div class="title">HMD: hide the flight HUD while the PCD zoom is on</div><div class="holder"><span class="glyph"></span> mechanic</div></div></div></section><section class="col done"><header><span class="name">DONE</span><span class="count">92</span><span class="gauge"><i style="--fill:1.0"></i></span></header><div class="list"><div class="card" style="--i:0"><div class="top"><span class="key">YA2-42</span></div><div class="title">Previous engine (F-22 per-surface aero) removed</div></div><div class="card" style="--i:1"><div class="top"><span class="key">YA2-43</span></div><div class="title">11.1 + 11.2 Onboard and toolchain</div></div><div class="card human" style="--i:2"><div class="top"><span class="key">YA2-1</span></div><div class="title">[HUMAN] Decide D1-D5: MSFS model, integrator, units, step, first-build scope</div></div><div class="card" style="--i:3"><div class="top"><span class="key">YA2-2</span></div><div class="title">1.1 Get the F-35B flight_model.cfg and engines.cfg, dump params</div></div><div class="card" style="--i:4"><div class="top"><span class="key">YA2-7</span></div><div class="title">3.1 Units module</div></div><div class="card" style="--i:5"><div class="top"><span class="key">YA2-3</span></div><div class="title">1.2 F35B config module from the cfg (MSFS keys and units)</div></div></div></section></div>
+    <section class="activity"><header><span class="name">ACTIVITY</span><span class="live">LIVE</span></header><div class="feed"><div class="ev ok"><span class="t">21:19</span><span class="glyph">8</span><span class="k">YA2-47</span><span class="m">gate green, submitting</span></div><div class="ev bad"><span class="t">21:18</span><span class="glyph"></span><span class="k">YA2-132</span><span class="m">Review: 2 findings</span></div><div class="ev "><span class="t">21:17</span><span class="glyph">8</span><span class="k">YA2-44</span><span class="m">plan written, implementing</span></div><div class="ev muted"><span class="t">21:15</span><span class="glyph"></span><span class="k"></span><span class="m">Updated project YA2</span></div><div class="ev muted"><span class="t">21:14</span><span class="glyph"></span><span class="k"></span><span class="m">imported 151 cards from trello</span></div></div></section>
+  </main>
+</div>
+<footer><span>C:\Users\gabri\AppData\Roaming\FuelStation\station.db <span class="dot">·</span> data_version 2</span><div class="spacer"></div><span class="btn small">Station Night ▾</span></footer>
+</body></html>
