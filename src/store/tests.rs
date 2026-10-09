@@ -442,3 +442,85 @@ fn columns_parse_and_step() {
     assert_eq!(Column::Backlog.prev(), None);
     assert_eq!(Column::Done.prev(), Some(Column::Review));
 }
+
+#[test]
+fn import_board_round_trip() {
+    let (_dir, mut store) = temp();
+    let manager = Actor {
+        role: Role::Manager,
+        name: "gabri".to_string(),
+    };
+    let card = |column, title: &str, comments: Vec<(Actor, String, i64)>| ImportCard {
+        column,
+        title: title.to_string(),
+        body: format!("{title} body"),
+        human: title.starts_with("[HUMAN]"),
+        created_at: 1_000,
+        comments,
+    };
+    let board = ImportBoard {
+        project: NewProject {
+            key: "im".to_string(),
+            name: "Imported".to_string(),
+            ..Default::default()
+        },
+        cards: vec![
+            card(Column::Done, "old", vec![]),
+            card(
+                Column::Backlog,
+                "[HUMAN] a",
+                vec![
+                    (manager.clone(), "one".to_string(), 50),
+                    (manager.clone(), "two".to_string(), 60),
+                ],
+            ),
+            card(Column::Backlog, "b", vec![]),
+        ],
+    };
+    let project = store.import_board(&board).unwrap();
+    assert_eq!(project.key, "IM");
+    let rows: Vec<_> = store
+        .board("IM", None)
+        .unwrap()
+        .into_iter()
+        .map(|c| (c.key, c.column, c.position, c.human))
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            ("IM-2".to_string(), Column::Backlog, 0, true),
+            ("IM-3".to_string(), Column::Backlog, 1, false),
+            ("IM-1".to_string(), Column::Done, 0, false),
+        ]
+    );
+    let detail = store.card_show("IM-2").unwrap();
+    assert_eq!(detail.card.body, "[HUMAN] a body");
+    assert_eq!(detail.card.created_at, 1_000);
+    assert_eq!(detail.comments.len(), 2);
+    assert_eq!(detail.comments[1].body, "two");
+    assert_eq!(detail.comments[1].created_at, 60);
+    assert_eq!(detail.comments[1].actor, manager);
+    let events = store.events("IM", 10).unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].kind, "import");
+    assert_eq!(events[0].message, "imported 3 cards from trello");
+    assert!(store.import_board(&board).is_err());
+}
+
+#[test]
+fn derive_key_rules() {
+    let none: Vec<String> = vec![];
+    assert_eq!(derive_key("fuel-station", &none), "FS");
+    assert_eq!(derive_key("Fuel Station", &none), "FS");
+    assert_eq!(derive_key("shototsu", &none), "SHOT");
+    assert_eq!(derive_key("yak-aviation", &none), "YA");
+    assert_eq!(
+        derive_key("one-two-three-four-five-six-seven-eight-nine", &none),
+        "OTTFFSSE"
+    );
+    let taken = vec!["YA".to_string()];
+    assert_eq!(derive_key("yak-automotive", &taken), "YA2");
+    let taken = vec!["YA".to_string(), "YA2".to_string()];
+    assert_eq!(derive_key("yak-aviation", &taken), "YA3");
+    assert_eq!(derive_key("!!!", &none), "P");
+}

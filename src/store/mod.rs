@@ -129,44 +129,9 @@ impl Store {
     }
 
     pub fn project_add(&mut self, new: &NewProject) -> Result<Project> {
-        let key = new.key.to_ascii_uppercase();
-        if key.is_empty()
-            || key.len() > 8
-            || !key
-                .bytes()
-                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
-        {
-            return Err(StoreError::Invalid(format!(
-                "project key {:?} must be 1-8 letters or digits",
-                new.key
-            )));
-        }
+        let key = project_key(&new.key)?;
         self.write(|tx| {
-            let exists = tx
-                .query_row("SELECT 1 FROM projects WHERE key = ?1", [&key], |_| Ok(()))
-                .optional()?
-                .is_some();
-            if exists {
-                return Err(StoreError::Invalid(format!("project {key} already exists")));
-            }
-            tx.execute(
-                "INSERT INTO projects (key, name, path, ship_mode, default_branch, verify_cmd, \
-                 worktree_dir, bootstrap_cmd, ship_cmd, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                params![
-                    key,
-                    new.name,
-                    new.path,
-                    new.ship_mode,
-                    new.default_branch,
-                    new.verify_cmd,
-                    new.worktree_dir,
-                    new.bootstrap_cmd,
-                    new.ship_cmd,
-                    now()
-                ],
-            )?;
-            let id = tx.last_insert_rowid();
+            let id = insert_project(tx, &key, new)?;
             event(
                 tx,
                 id,
@@ -174,6 +139,49 @@ impl Store {
                 &station(),
                 "project_add",
                 &format!("Added project {key}"),
+            )?;
+            find_project(tx, &key)
+        })
+    }
+
+    pub fn import_board(&mut self, board: &ImportBoard) -> Result<Project> {
+        let key = project_key(&board.project.key)?;
+        self.write(|tx| {
+            let project_id = insert_project(tx, &key, &board.project)?;
+            let mut positions = [0_i64; Column::ALL.len()];
+            for (i, card) in board.cards.iter().enumerate() {
+                let slot = &mut positions[card.column.index()];
+                tx.execute(
+                    "INSERT INTO cards (project_id, number, title, body, col, position, human, \
+                     created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+                    params![
+                        project_id,
+                        i as i64 + 1,
+                        card.title,
+                        card.body,
+                        card.column,
+                        *slot,
+                        card.human,
+                        card.created_at
+                    ],
+                )?;
+                *slot += 1;
+                let card_id = tx.last_insert_rowid();
+                for (actor, body, created_at) in &card.comments {
+                    tx.execute(
+                        "INSERT INTO comments (card_id, actor_role, actor_name, body, created_at) \
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                        params![card_id, actor.role, actor.name, body, created_at],
+                    )?;
+                }
+            }
+            event(
+                tx,
+                project_id,
+                None,
+                &station(),
+                "import",
+                &format!("imported {} cards from trello", board.cards.len()),
             )?;
             find_project(tx, &key)
         })
@@ -685,6 +693,49 @@ fn station() -> Actor {
         role: Role::Manager,
         name: "station".to_string(),
     }
+}
+
+fn project_key(raw: &str) -> Result<String> {
+    let key = raw.to_ascii_uppercase();
+    if key.is_empty()
+        || key.len() > 8
+        || !key
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+    {
+        return Err(StoreError::Invalid(format!(
+            "project key {raw:?} must be 1-8 letters or digits"
+        )));
+    }
+    Ok(key)
+}
+
+fn insert_project(conn: &Connection, key: &str, new: &NewProject) -> Result<i64> {
+    let exists = conn
+        .query_row("SELECT 1 FROM projects WHERE key = ?1", [key], |_| Ok(()))
+        .optional()?
+        .is_some();
+    if exists {
+        return Err(StoreError::Invalid(format!("project {key} already exists")));
+    }
+    conn.execute(
+        "INSERT INTO projects (key, name, path, ship_mode, default_branch, verify_cmd, \
+         worktree_dir, bootstrap_cmd, ship_cmd, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            key,
+            new.name,
+            new.path,
+            new.ship_mode,
+            new.default_branch,
+            new.verify_cmd,
+            new.worktree_dir,
+            new.bootstrap_cmd,
+            new.ship_cmd,
+            now()
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
 }
 
 fn parse_card_key(card_key: &str) -> Result<(String, i64)> {

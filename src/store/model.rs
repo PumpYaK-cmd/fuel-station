@@ -256,3 +256,44 @@ pub struct CardPatch {
     pub tier: Option<String>,
     pub human: Option<bool>,
 }
+
+#[derive(Debug, Clone)]
+pub struct ImportCard {
+    pub column: Column,
+    pub title: String,
+    pub body: String,
+    pub human: bool,
+    pub created_at: i64,
+    pub comments: Vec<(Actor, String, i64)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImportBoard {
+    pub project: NewProject,
+    pub cards: Vec<ImportCard>,
+}
+
+pub fn derive_key(name: &str, taken: &[String]) -> String {
+    let words: Vec<&str> = name
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    let base: String = match words.as_slice() {
+        [] => "P".to_string(),
+        [one] => one.chars().take(4).collect(),
+        many => many.iter().filter_map(|w| w.chars().next()).collect(),
+    };
+    let base: String = base.to_ascii_uppercase().chars().take(8).collect();
+    let is_taken = |key: &str| taken.iter().any(|t| t.eq_ignore_ascii_case(key));
+    if !is_taken(&base) {
+        return base;
+    }
+    (2..)
+        .map(|n| {
+            let suffix = n.to_string();
+            let head: String = base.chars().take(8 - suffix.len()).collect();
+            format!("{head}{suffix}")
+        })
+        .find(|key| !is_taken(key))
+        .expect("unbounded range")
+}

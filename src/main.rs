@@ -5,6 +5,8 @@ mod setup;
 mod store;
 mod ui;
 
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -21,6 +23,23 @@ enum Command {
         project: String,
     },
     Install,
+    ImportTrello {
+        #[arg(long)]
+        dir: Option<PathBuf>,
+    },
+}
+
+fn import_trello(dir: Option<PathBuf>) -> Result<(), String> {
+    let dir = dir.unwrap_or_else(import::trello_dir);
+    let mut store = store::Store::open_default().map_err(|e| e.to_string())?;
+    let report = import::import_all(&mut store, &dir)?;
+    for (key, name, cards) in &report.imported {
+        println!("imported {name} as {key}: {cards} cards");
+    }
+    for (name, reason) in &report.skipped {
+        println!("skipped {name}: {reason}");
+    }
+    Ok(())
 }
 
 fn main() {
@@ -40,5 +59,11 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Some(Command::ImportTrello { dir }) => {
+            if let Err(e) = import_trello(dir) {
+                eprintln!("import failed: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 }

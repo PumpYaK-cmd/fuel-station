@@ -1,6 +1,6 @@
 # Import trello boards (card be62122e)
 
-base: <filled by agent>
+base: 7307b4ec6c3656cc008e688cac02bb884d2672f6
 
 ## Context
 design.md > Import. Source: `~/.trello/<boardId>/` with `board.json` (`name`, `desc`,
