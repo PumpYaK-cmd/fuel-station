@@ -96,9 +96,9 @@ pub fn import_all(store: &mut Store, trello_dir: &Path) -> Result<ImportReport, 
     }
     boards.sort_by(|a, b| a.1.name.cmp(&b.1.name));
 
-    let projects = store.projects().map_err(|e| e.to_string())?;
-    let mut taken: Vec<String> = projects.iter().map(|p| p.key.clone()).collect();
-    let mut names: Vec<String> = projects.into_iter().map(|p| p.name).collect();
+    let projects = store.project_names().map_err(|e| e.to_string())?;
+    let mut taken: Vec<String> = projects.iter().map(|p| p.0.clone()).collect();
+    let mut names: Vec<String> = projects.into_iter().map(|p| p.1).collect();
     for (dir, file) in boards {
         if file.closed {
             report.skipped.push((file.name, "closed".to_string()));

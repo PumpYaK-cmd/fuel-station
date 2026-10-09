@@ -38,6 +38,37 @@ fn event_count(store: &Store) -> usize {
 }
 
 #[test]
+fn project_names_include_archived() {
+    let (_dir, mut store) = temp();
+    with_project(&mut store);
+    store
+        .project_add(&NewProject {
+            key: "old".to_string(),
+            name: "Old".to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+    store
+        .conn
+        .execute("UPDATE projects SET archived = 1 WHERE key = 'OLD'", [])
+        .unwrap();
+    let listed: Vec<_> = store
+        .projects()
+        .unwrap()
+        .into_iter()
+        .map(|p| p.key)
+        .collect();
+    assert_eq!(listed, ["FS"]);
+    assert_eq!(
+        store.project_names().unwrap(),
+        [
+            ("FS".to_string(), "Fuel Station".to_string()),
+            ("OLD".to_string(), "Old".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn migrations_are_idempotent_on_reopen() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("nested").join("station.db");

@@ -255,7 +255,13 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::AddProject => return pick_folder(None),
         Message::PickFolder(key) => return pick_folder(Some(key)),
         Message::Picked(key, Some(dir)) => {
-            let taken: Vec<String> = app.projects.iter().map(|p| p.key.clone()).collect();
+            let taken: Vec<String> = match app.store.project_names() {
+                Ok(names) => names.into_iter().map(|(key, _)| key).collect(),
+                Err(e) => {
+                    app.error = Some(e.to_string());
+                    return Task::none();
+                }
+            };
             app.sheet = match key {
                 None => Some(Sheet::add(&dir, &taken)),
                 Some(key) => app

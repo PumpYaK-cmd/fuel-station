@@ -189,6 +189,37 @@ fn colliding_keys_get_a_number() {
 }
 
 #[test]
+fn archived_projects_count_for_keys_and_names() {
+    let root = tempfile::tempdir().unwrap();
+    for (id, name) in [("1", "yak-aviation"), ("2", "yak-automotive")] {
+        let dir = board(root.path(), id, name, "", false);
+        simple(&dir, "a", "b", "one", 1.0);
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("station.db");
+    let mut store = Store::open(&db).unwrap();
+    store
+        .project_add(&NewProject {
+            key: "ya".to_string(),
+            name: "yak-automotive".to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+    rusqlite::Connection::open(&db)
+        .unwrap()
+        .execute("UPDATE projects SET archived = 1", [])
+        .unwrap();
+    let report = import_all(&mut store, root.path()).unwrap();
+    let keys: Vec<_> = report.imported.iter().map(|i| i.0.as_str()).collect();
+    assert_eq!(keys, ["YA2"]);
+    assert!(
+        report
+            .skipped
+            .contains(&("yak-automotive".to_string(), "already imported".to_string()))
+    );
+}
+
+#[test]
 fn path_extraction() {
     let cases = [
         (

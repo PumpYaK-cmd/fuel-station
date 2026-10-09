@@ -124,6 +124,16 @@ impl Store {
         Ok(projects)
     }
 
+    pub fn project_names(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT key, name FROM projects ORDER BY key")?;
+        let names = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(names)
+    }
+
     pub fn project(&self, key: &str) -> Result<Project> {
         find_project(&self.conn, key)
     }
