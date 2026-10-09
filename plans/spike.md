@@ -1,6 +1,6 @@
 # Spike: cargo skeleton, Station Night theme, rmcp hello (card 0ba2ff5f)
 
-base: <filled by agent>
+base: befcc012c8612c1f3b38dd3744ea912e997414a5
 
 ## Context
 The crate skeleton is already committed: `Cargo.toml` (all v1 deps), `src/main.rs` (clap,
