@@ -1,17 +1,21 @@
 mod activity;
 mod detail;
+mod fx;
 mod setup_sheet;
 pub mod theme;
+mod titlebar;
 
+use std::collections::HashMap;
+use std::f32::consts::PI;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use iced::keyboard::{self, Key, key::Named};
 use iced::widget::{
-    button, column, container, mouse_area, pick_list, row, rule, scrollable, space, text,
-    text_editor,
+    button, canvas, column, container, mouse_area, pick_list, progress_bar, row, rule, scrollable,
+    space, stack, text, text_editor,
 };
-use iced::{Alignment, Element, Length, Subscription, Task, Theme, mouse};
+use iced::{Alignment, Color, Element, Length, Size, Subscription, Task, Theme, mouse, window};
 
 use crate::import::{self, ImportReport};
 use crate::setup::agents;
@@ -28,6 +32,11 @@ pub fn run() {
         .theme(app_theme)
         .font(include_bytes!("../../assets/fonts/JetBrainsMonoNerdFont-Regular.ttf").as_slice())
         .default_font(theme::FONT)
+        .window(window::Settings {
+            min_size: Some(Size::new(960.0, 600.0)),
+            decorations: false,
+            ..window::Settings::default()
+        })
         .run();
     if let Err(e) = result {
         eprintln!("fuel-station: {e}");
@@ -53,6 +62,13 @@ struct App {
     sheet: Option<Sheet>,
     can_import: bool,
     import: Option<Result<ImportReport, String>>,
+    window: Option<window::Id>,
+    booted: Instant,
+    t: f32,
+    hovered: Option<String>,
+    appeared: HashMap<String, Instant>,
+    reloaded: Instant,
+    grid: canvas::Cache,
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +94,14 @@ enum Message {
     Sheet(setup_sheet::Message),
     Import,
     CloseImport,
+    WindowId(Option<window::Id>),
+    Frame(Instant),
+    DragWindow,
+    Minimize,
+    ToggleMaximize,
+    Close,
+    Resized,
+    HoverCard(Option<String>),
 }
 
 fn boot() -> State {
@@ -102,6 +126,13 @@ fn boot() -> State {
         sheet: None,
         can_import: import::trello_dir().is_dir(),
         import: None,
+        window: None,
+        booted: Instant::now(),
+        t: 0.0,
+        hovered: None,
+        appeared: HashMap::new(),
+        reloaded: Instant::now(),
+        grid: canvas::Cache::new(),
     };
     app.reload(None);
     if let Err(e) = agents::install_agents(&agents::agents_dir()) {
@@ -122,6 +153,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::Tick => {
             app.ticks = app.ticks.wrapping_add(1);
+            if app.window.is_none() {
+                return window::latest().map(Message::WindowId);
+            }
             match app.store.data_version() {
                 Ok(version) if version != app.data_version || app.ticks % 17 == 0 => {
                     app.reload(app.selected.clone())
@@ -252,6 +286,20 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             app.reload(None);
         }
         Message::CloseImport => app.import = None,
+        Message::WindowId(id) => app.window = id,
+        Message::Frame(now) => app.t = now.duration_since(app.booted).as_secs_f32(),
+        Message::DragWindow => return app.window.map_or_else(Task::none, window::drag),
+        Message::Minimize => {
+            return app
+                .window
+                .map_or_else(Task::none, |id| window::minimize(id, true));
+        }
+        Message::ToggleMaximize => {
+            return app.window.map_or_else(Task::none, window::toggle_maximize);
+        }
+        Message::Close => return app.window.map_or_else(Task::none, window::close),
+        Message::Resized => app.grid.clear(),
+        Message::HoverCard(key) => app.hovered = key,
     }
     Task::none()
 }
@@ -286,8 +334,10 @@ fn subscription(state: &State) -> Subscription<Message> {
     match state {
         Ok(app) => {
             let tick = iced::time::every(Duration::from_millis(300)).map(|_| Message::Tick);
+            let frames = window::frames().map(Message::Frame);
+            let resized = window::resize_events().map(|_| Message::Resized);
             if app.detail.is_none() {
-                return tick;
+                return Subscription::batch([tick, frames, resized]);
             }
             let keys = keyboard::listen().filter_map(|event| match event {
                 keyboard::Event::KeyPressed {
@@ -300,7 +350,7 @@ fn subscription(state: &State) -> Subscription<Message> {
                 },
                 _ => None,
             });
-            Subscription::batch([tick, keys])
+            Subscription::batch([tick, frames, resized, keys])
         }
         Err(_) => Subscription::none(),
     }
@@ -366,6 +416,19 @@ impl App {
             }
             _ => None,
         };
+        let now = Instant::now();
+        if selected != self.selected {
+            self.appeared.clear();
+            self.reloaded = now;
+        } else {
+            for card in &board {
+                if !self.board.iter().any(|old| old.key == card.key) {
+                    self.appeared.insert(card.key.clone(), now);
+                }
+            }
+        }
+        self.appeared
+            .retain(|_, at| now.duration_since(*at) < Duration::from_secs(1));
         self.projects = projects;
         self.selected = selected;
         self.board = board;
@@ -381,9 +444,24 @@ impl App {
     }
 
     fn view(&self) -> Element<'_, Message> {
+        let backdrop = canvas(fx::Backdrop {
+            t: self.t,
+            grid: &self.grid,
+        })
+        .width(Length::Fill)
+        .height(Length::Fill);
         let body =
             row![self.view_sidebar(), rule::vertical(1), self.view_main()].height(Length::Fill);
-        column![body, rule::horizontal(1), self.view_footer()].into()
+        stack![
+            backdrop,
+            column![
+                titlebar::view(self),
+                body,
+                rule::horizontal(1),
+                self.view_footer()
+            ]
+        ]
+        .into()
     }
 
     fn view_sidebar(&self) -> Element<'_, Message> {
@@ -405,14 +483,20 @@ impl App {
             .width(Length::Fill)
             .on_press(Message::AddProject)
             .style(theme::button(false));
-        column![
-            text("FUEL STATION"),
-            scrollable(projects).height(Length::Fill),
-            add
-        ]
-        .spacing(20)
-        .padding(20)
+        container(
+            column![
+                scrollable(projects)
+                    .direction(theme::thin())
+                    .style(theme::scrollbar)
+                    .height(Length::Fill),
+                add
+            ]
+            .spacing(20),
+        )
+        .padding([20, 16])
         .width(200)
+        .height(Length::Fill)
+        .style(theme::sidebar)
         .into()
     }
 
@@ -453,74 +537,84 @@ impl App {
         let header = row![
             text(format!("{} · {}", project.key, project.name)),
             space::horizontal(),
-            self.view_agents(),
             action.style(theme::button(false)),
         ]
         .spacing(20)
         .align_y(Alignment::Center);
-        let mut main = row![column![columns, activity::view(&self.events)].spacing(10)]
+        let mut main = row![column![columns, activity::view(&self.events, self.t)].spacing(10)]
             .spacing(10)
             .height(Length::Fill);
         if let Some(detail) = &self.detail {
             main = main.push(detail.view(&self.theme));
         }
         column![header, main]
-            .spacing(20)
-            .padding(20)
+            .spacing(14)
+            .padding([16, 20])
             .width(Length::Fill)
             .into()
-    }
-
-    fn view_agents(&self) -> Element<'_, Message> {
-        let count = self.agents.len();
-        let dot = if count > 0 {
-            theme::ACCENT
-        } else {
-            theme::TEXT_MUTED
-        };
-        let mut strip = row![
-            text("●").color(dot),
-            text(format!("{count} agents")).color(theme::TEXT_MUTED),
-        ]
-        .spacing(6);
-        for agent in &self.agents {
-            strip = strip.push(
-                text(format!(
-                    "  {} {} {}",
-                    role_glyph(agent.actor.role),
-                    agent.actor.name,
-                    agent.card_key.as_deref().unwrap_or("")
-                ))
-                .color(theme::ACCENT),
-            );
-        }
-        strip.into()
     }
 
     fn view_column(&self, col: Column) -> Element<'_, Message> {
         let cards: Vec<&CardSummary> = self.board.iter().filter(|c| c.column == col).collect();
-        let name = text(col.as_str().to_uppercase());
-        let name = match col {
-            Column::Review => name.color(theme::WARNING),
-            Column::Done => name.color(theme::SUCCESS),
-            _ => name,
+        let (name_color, gauge_color) = match col {
+            Column::Review => (theme::WARNING, theme::WARNING),
+            Column::Done => (theme::SUCCESS, theme::SUCCESS),
+            _ => (theme::TEXT, theme::PRIMARY),
         };
-        let header = row![name, text(cards.len().to_string()).color(theme::TEXT_MUTED)].spacing(8);
+        let grow = 1.0 - (1.0 - self.reloaded.elapsed().as_secs_f32().min(1.0)).powi(3);
+        let fill = (cards.len() as f32).min(theme::COLUMN_CAP) / theme::COLUMN_CAP * grow;
+        let header = row![
+            text(col.as_str().to_uppercase()).size(11).color(name_color),
+            text(cards.len().to_string())
+                .size(11)
+                .color(theme::TEXT_MUTED),
+            progress_bar(0.0..=1.0, fill)
+                .girth(3)
+                .style(theme::gauge(gauge_color)),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
         let open = self.detail.as_ref().map(|d| d.key.as_str());
         let list = scrollable(
-            column(
-                cards
-                    .into_iter()
-                    .map(|card| card_box(card, open == Some(card.key.as_str()))),
-            )
+            column(cards.into_iter().map(|card| {
+                let flash = self
+                    .appeared
+                    .get(&card.key)
+                    .map(|at| at.elapsed().as_secs_f32() / FLASH_SECS)
+                    .filter(|age| *age < 1.0);
+                card_box(
+                    card,
+                    open == Some(card.key.as_str()),
+                    self.hovered.as_deref() == Some(card.key.as_str()),
+                    flash,
+                )
+            }))
             .spacing(6),
-        );
-        container(column![header, list].spacing(10))
+        )
+        .direction(theme::thin())
+        .style(theme::scrollbar);
+        let panel = container(column![header, rule::horizontal(1), list].spacing(10))
             .padding(10)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(theme::panel)
-            .into()
+            .style(theme::glass);
+        let brackets = match col {
+            Column::Doing => fx::Brackets {
+                color: theme::PRIMARY,
+                alpha: 0.7 + 0.3 * (self.t * PI).sin(),
+            },
+            _ => fx::Brackets {
+                color: theme::BORDER_STRONG,
+                alpha: 1.0,
+            },
+        };
+        stack![
+            panel,
+            canvas(brackets).width(Length::Fill).height(Length::Fill)
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
     }
 
     fn view_footer(&self) -> Element<'_, Message> {
@@ -530,19 +624,27 @@ impl App {
                 store::db_path().display(),
                 self.data_version
             ))
+            .size(11)
             .color(theme::TEXT_MUTED)
         ]
         .spacing(20)
         .align_y(Alignment::Center);
         if let Some(e) = &self.error {
-            status = status.push(text(e).color(theme::DANGER));
+            status = status.push(text(e).size(11).color(theme::DANGER));
         }
-        container(status.push(space::horizontal()).push(pick_list(
-            self.themes.as_slice(),
-            Some(&self.theme),
-            Message::ThemeChanged,
-        )))
-        .padding([10, 20])
+        container(
+            status.push(space::horizontal()).push(
+                pick_list(
+                    self.themes.as_slice(),
+                    Some(&self.theme),
+                    Message::ThemeChanged,
+                )
+                .text_size(11)
+                .style(theme::picker),
+            ),
+        )
+        .padding([8, 20])
+        .style(theme::bar)
         .into()
     }
 }
@@ -578,7 +680,14 @@ fn view_import(import: &Result<ImportReport, String>) -> Element<'_, Message> {
         .into()
 }
 
-fn card_box(card: &CardSummary, selected: bool) -> Element<'_, Message> {
+const FLASH_SECS: f32 = 0.6;
+
+fn card_box(
+    card: &CardSummary,
+    selected: bool,
+    hovered: bool,
+    flash: Option<f32>,
+) -> Element<'_, Message> {
     let mut top = row![text(&card.key).color(theme::TEXT_MUTED)];
     if let Some(tier) = &card.tier {
         top = top
@@ -588,18 +697,56 @@ fn card_box(card: &CardSummary, selected: bool) -> Element<'_, Message> {
     let mut body = column![top, text(&card.title)].spacing(4);
     if let Some(holder) = &card.holder {
         body = body.push(
-            text(format!("{} {}", role_glyph(holder.role), holder.name)).color(theme::ACCENT),
+            text(format!("{} {}", role_glyph(holder.role), holder.name))
+                .size(11)
+                .color(theme::ACCENT),
         );
     }
+    let bar = if selected {
+        theme::ACCENT
+    } else if card.human {
+        theme::WARNING
+    } else if let Some(age) = flash {
+        mix(theme::ACCENT, theme::BORDER_STRONG, age)
+    } else if hovered {
+        theme::PRIMARY
+    } else {
+        theme::BORDER_STRONG
+    };
+    let border = if selected {
+        theme::ACCENT
+    } else if card.human {
+        theme::WARNING
+    } else {
+        theme::BORDER
+    };
+    let content = row![
+        container(space())
+            .width(2)
+            .height(Length::Fill)
+            .style(theme::fill(bar)),
+        container(body).padding(8).width(Length::Fill),
+    ]
+    .height(Length::Shrink);
     mouse_area(
-        container(body)
-            .padding(8)
+        container(content)
             .width(Length::Fill)
-            .style(theme::card_box(card.human, selected)),
+            .style(theme::card(border)),
     )
     .on_press(Message::OpenCard(card.key.clone()))
+    .on_enter(Message::HoverCard(Some(card.key.clone())))
+    .on_exit(Message::HoverCard(None))
     .interaction(mouse::Interaction::Pointer)
     .into()
+}
+
+fn mix(from: Color, to: Color, k: f32) -> Color {
+    Color {
+        r: from.r + (to.r - from.r) * k,
+        g: from.g + (to.g - from.g) * k,
+        b: from.b + (to.b - from.b) * k,
+        a: from.a + (to.a - from.a) * k,
+    }
 }
 
 fn local_time(secs: i64, format: &str) -> String {

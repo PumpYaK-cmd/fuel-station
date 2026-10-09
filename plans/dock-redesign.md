@@ -4,7 +4,7 @@ Card: see board (Ready, "Docking Bay redesign: integrated title bar, animated ba
 Reference: `docs/mockups/2-dock.html` (open in a browser for the animations). Chosen over
 Orbit, Nebula and Mission Control on 2026-10-09; the other three get deleted on ship.
 
-base: <fill in at claim: git rev-parse HEAD>
+base: 5244558bb4376af14024fa3725984af17f7a821d
 
 ## Context
 
@@ -165,3 +165,10 @@ picker that recolours the backdrop, Linux/macOS window-control conventions.
     Scope: 9 files (theme, fx, titlebar, mod, activity, detail, setup_sheet, design.md,
            CLAUDE.md) + mockup cleanup; touches every view fn, no store or MCP change.
            Asks: none
+
+## Fact corrections (at claim)
+- `canvas` is an opt-in iced feature: add it to `Cargo.toml`.
+- Scrollable width is not a style field: thin scrollbars via
+  `Direction::Vertical(Scrollbar::new().width(4).scroller_width(4))`, colours via `scrollbar`.
+- Checklist 11: undecorated window still resizes from its edges on Windows; if not, file a
+  card for `window::drag_resize` handles.

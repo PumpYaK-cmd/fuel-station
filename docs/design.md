@@ -142,69 +142,89 @@ without one becomes a project with no path, and the GUI asks for the folder. Rea
 ## UI
 
 iced 0.14, layout and widget style taken from pumpbin (minimal, outlined), with our own
-dark blue palette instead of Catppuccin.
+dark blue palette, dressed as a space docking bay. Reference mockup:
+`docs/mockups/2-dock.html` (open in a browser for the animations).
 
 ```
-┌──────────────┬────────────────────────────────────────────────────────────┐
-│  FUEL STATION│ FS · Fuel Station                     ● 3 agents  ⌕ filter │
-├──────────────┼──────────┬──────────┬──────────┬──────────┬────────────────┤
-│ ▸ fuel-stat. │ BACKLOG 4│ READY 3  │ DOING 2  │ REVIEW 1 │ DONE 18        │
-│   shototsu   │ ┌──────┐ │ ┌──────┐ │ ┌──────┐ │ ┌──────┐ │ ┌──────┐       │
-│   forge-load │ │FS-14 │ │ │FS-9  │ │ │FS-7  │ │ │FS-6  │ │ │FS-5  │       │
-│   kitsu-pen  │ │title │ │ │title │ │ │ fuel │ │ │ mech │ │ │      │       │
-│              │ └──────┘ │ └──────┘ │ └──────┘ │ └──────┘ │ └──────┘       │
-│              │          │          │          │          │                │
-│ + Add Project├──────────┴──────────┴──────────┴──────────┴────────────────┤
-│              │ ACTIVITY  19:42 fuel   FS-7  gate green, submitting         │
-│              │           19:40 mech   FS-6  2 findings                     │
+┌───────────────────────────────────────────────────────────────────────────┐
+│ ◆ FUEL STATION                ● 3 agents ◆ fuel-1 FS-7 ◆ fuel-3 FS-9  _ □ ✕ │
+├──────────────┬────────────────────────────────────────────────────────────┤
+│ fuel-station │ FS · Fuel Station                           Repair setup  │
+│ shototsu     │ ┌BACKLOG 4 ━━──┐┌READY 3 ━─────┐┌DOING 2 ─────┐ ...        │
+│ forge-load   │ │▌FS-14        ││▌FS-9         ││▌FS-7  [T1]  │            │
+│ kitsu-pen    │ │▌title        ││▌title        ││▌◆ fuel-1    │            │
+│              │ └──────────────┘└──────────────┘└─────────────┘            │
+│ + Add Project│ ACTIVITY LIVE  19:42 │ ◆ FS-7  gate green, submitting      │
 ├──────────────┴────────────────────────────────────────────────────────────┤
 │ station.db · data_version 1182                               theme ▾      │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
+- **Window**: undecorated. `ui::titlebar` is the title bar: brand, the agents strip (pulsing
+  dot, count, one `glyph name card` per agent), minimise / maximise / close. Pressing the bar
+  drags the window, double-click maximises. Minimum size 960×600.
+- **Backdrop**: a canvas under everything: 40 px blueprint grid fading out from (50 %, 40 %)
+  of the window, and a 200 px light band sweeping top to bottom every 9 s.
 - **Sidebar**: projects as outlined buttons; selected = accent outline. `+ Add Project` at the
-  bottom.
-- **Board**: five bordered columns with a count. Cards are outlined boxes: key, title, tier
-  tag, and the glyph and name of the agent holding it (truck, gas pump, wrench Nerd Font
-  glyphs). `[HUMAN]` cards get a warning outline.
+  bottom. Translucent surface over the backdrop.
+- **Board**: five translucent columns with corner brackets instead of an outline; the Doing
+  brackets pulse in `primary`. Header: name, count, a 3 px gauge (full at 20 cards; Review
+  amber, Done green) that fills in over 1 s on project switch. Cards are opaque boxes with a
+  2 px left bar: `accent` when open, `warning` for `[HUMAN]`, flashes `accent` when a card
+  first appears, `primary` on hover, else `border_strong`.
 - **Card detail**: side panel on click: title, body, plan (iced `markdown` widget),
   comments, events, move buttons, edit fields.
-- **Activity**: live event feed for the project, newest first.
-- **Footer**: db status and theme picker, as pumpbin has.
+- **Activity**: live event feed for the project, newest first; a blinking `LIVE` tag.
+- **Footer**: db status and theme picker, as pumpbin has. The backdrop stays Station Night
+  whatever theme is picked.
 - Moving cards in v1: buttons in the detail panel and `←`/`→` shortcuts. Drag-and-drop is a
   backlog card.
+
+### Motion
+
+One clock: `App::t`, seconds since boot, set from `window::frames()`. Every animation is a
+pure function of `t` (sweep, bracket pulse, agent dot, LIVE blink) or of an `Instant` stored
+on reload (`App::reloaded` for gauges, `App::appeared` for new-card flashes). No per-widget
+animation state. The grid is a `canvas::Cache` cleared on resize; only the sweep and the
+brackets redraw every frame.
 
 ### Style rules (from pumpbin)
 
 - Font: JetBrains Mono Nerd Font, bundled, used for all text; Nerd Font glyphs instead of
   icon images.
 - Buttons: no fill, 1 px border, text and border in `primary`; selected uses `accent`;
-  hover lifts the fill to `surface_hover`.
-- Panels: `container::Style::default().with_border(border, 1)`; rules are
-  `rule::horizontal(1)` / `rule::vertical(1)` (iced 0.14: the arg is drawn thickness).
-- Padding and spacing 20 between regions, 3 to 10 inside lists.
+  hover lifts the fill to `surface_hover`. Window buttons: no border, `danger` fill on close
+  hover.
+- Panels: `theme::glass` (translucent surface, no outline); rules are `rule::horizontal(1)` /
+  `rule::vertical(1)` (iced 0.14: the arg is drawn thickness).
+- Inputs, pick lists, scrollbars: `theme::input` / `editor` / `picker` / `scrollbar`; thin
+  4 px scrollbars via `theme::thin()`.
+- Padding and spacing 20 between regions, 3 to 10 inside lists. Labels and chrome text 11.
 - Square-ish corners: radius 2.
 
-### Palette: "Station Night" (tune in the spike)
+### Palette: "Station Night"
 
 | Token          | Hex       | Use |
 |----------------|-----------|-----|
-| background     | `#0A0E14` | window |
-| surface        | `#0F1520` | columns, panels |
-| surface_hover  | `#151D2B` | hovered card / button |
-| border         | `#1C2636` | panel and card outlines |
-| border_strong  | `#2A3A52` | focused panel |
+| background     | `#0A0E14` | window, backdrop, card fill |
+| surface        | `#0F1520` | title bar, footer |
+| surface_hover  | `#151D2B` | hovered button |
+| border         | `#1C2636` | card outlines, rules, gauge track |
+| border_strong  | `#2A3A52` | brackets, card bars at rest |
 | text           | `#C8D3E6` | body |
 | text_muted     | `#5E6E88` | timestamps, counts |
-| primary        | `#3D8BFF` | buttons, links, outlines of actionable items |
-| accent         | `#6CC4FF` | selected project, active card, agent glyphs |
-| success        | `#2FD3A0` | Done, gate green |
+| primary        | `#3D8BFF` | buttons, gauges, Doing brackets, hovered card bar |
+| accent         | `#6CC4FF` | selected project, open card, agent glyphs, new-card flash |
+| success        | `#2FD3A0` | Done, gate green, LIVE |
 | warning        | `#F0B44C` | `[HUMAN]`, Review |
-| danger         | `#FF5C6C` | failed gate, findings |
+| danger         | `#FF5C6C` | failed gate, findings, close hover |
+| surface_glass  | surface at 0.93 | columns, activity, detail, setup sheet |
+| sidebar_glass  | surface at 0.80 | sidebar |
+| bar_grid       | border_strong at 0.5 | backdrop grid |
+| sweep          | primary at 0.08 | backdrop sweep band |
 
 Built with `Theme::custom("Station Night", Palette { background, text, primary, success,
-warning, danger })`; `border`, `surface*`, `text_muted` and `accent` are constants in
-`ui::theme` used by the style functions.
+warning, danger })`; the rest are constants in `ui::theme` used by the style functions.
 
 ## Verify gate
 

@@ -1,10 +1,10 @@
 use iced::widget::{column, container, row, scrollable, text};
-use iced::{Element, Length};
+use iced::{Alignment, Element, Length};
 
 use super::{Message, local_time, role_glyph, theme};
 use crate::store::Event;
 
-pub fn view(events: &[Event]) -> Element<'_, Message> {
+pub fn view(events: &[Event], t: f32) -> Element<'_, Message> {
     let list = column(events.iter().map(|e| {
         let color = match e.kind.as_str() {
             "report" => theme::TEXT,
@@ -13,7 +13,11 @@ pub fn view(events: &[Event]) -> Element<'_, Message> {
             _ => theme::TEXT_MUTED,
         };
         row![
-            text(local_time(e.created_at, "%H:%M")).color(theme::TEXT_MUTED),
+            row![
+                text(local_time(e.created_at, "%H:%M")).color(theme::TEXT_MUTED),
+                text("│").color(theme::BORDER_STRONG),
+            ]
+            .spacing(6),
             text(role_glyph(e.actor.role)).color(theme::ACCENT),
             text(e.card_key.as_deref().unwrap_or("")).width(70),
             text(&e.message).color(color),
@@ -22,10 +26,23 @@ pub fn view(events: &[Event]) -> Element<'_, Message> {
         .into()
     }))
     .spacing(3);
-    container(column![text("ACTIVITY"), scrollable(list).width(Length::Fill)].spacing(10))
+    let live = if (t * 0.625) % 1.0 < 0.5 { 1.0 } else { 0.25 };
+    let header = row![
+        text("ACTIVITY").size(11),
+        text("LIVE")
+            .size(10)
+            .color(theme::SUCCESS.scale_alpha(live)),
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center);
+    let list = scrollable(list)
+        .direction(theme::thin())
+        .style(theme::scrollbar)
+        .width(Length::Fill);
+    container(column![header, list].spacing(10))
         .padding(10)
         .width(Length::Fill)
         .height(170)
-        .style(theme::panel)
+        .style(theme::glass)
         .into()
 }

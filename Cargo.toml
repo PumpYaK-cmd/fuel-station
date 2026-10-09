@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
-iced = { version = "0.14", features = ["tokio", "markdown", "advanced"] }
+iced = { version = "0.14", features = ["tokio", "markdown", "advanced", "canvas"] }
 rfd = "0.17"
 rmcp = { version = "3.5", features = ["server", "transport-io", "macros"] }
 rusqlite = { version = "0.40", features = ["bundled"] }

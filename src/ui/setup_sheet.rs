@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use iced::widget::{button, column, pick_list, row, scrollable, text, text_input};
+use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
 use iced::{Element, Length};
 
 use super::theme;
@@ -141,16 +141,16 @@ impl Sheet {
             Some(result) => self.view_result(result),
             None => self.view_form(),
         };
-        column![text(title), body]
-            .spacing(20)
-            .padding(20)
+        container(column![text(title), body].spacing(20).padding(20))
             .width(Length::Fill)
+            .height(Length::Fill)
+            .style(theme::glass)
             .into()
     }
 
     fn view_form(&self) -> Element<'_, Message> {
         let form = &self.form;
-        let mut key = text_input("KEY", &form.key);
+        let mut key = text_input("KEY", &form.key).style(theme::input);
         if self.repair.is_none() {
             key = key.on_input(|v| Message::Edit(Field::Key, v));
         }
@@ -166,6 +166,7 @@ impl Sheet {
                 pick_list(SHIP_MODES, Some(form.ship_mode.as_str()), |s| {
                     Message::ShipMode(s.parse().unwrap_or_default())
                 })
+                .style(theme::picker)
                 .into()
             ),
             labelled("Branch", input("main", &form.default_branch, Field::Branch)),
@@ -214,7 +215,10 @@ impl Sheet {
                 .style(theme::button(false)),
         ]
         .spacing(10);
-        scrollable(content.push(buttons).width(Length::Fill)).into()
+        scrollable(content.push(buttons).width(Length::Fill))
+            .direction(theme::thin())
+            .style(theme::scrollbar)
+            .into()
     }
 
     fn view_result<'a>(&'a self, result: &'a [Written]) -> Element<'a, Message> {
@@ -238,13 +242,17 @@ impl Sheet {
         let done = button(text("Done"))
             .on_press(Message::Close)
             .style(theme::button(false));
-        scrollable(column![rows, done].spacing(20)).into()
+        scrollable(column![rows, done].spacing(20))
+            .direction(theme::thin())
+            .style(theme::scrollbar)
+            .into()
     }
 }
 
 fn input<'a>(placeholder: &'a str, value: &'a str, field: Field) -> Element<'a, Message> {
     text_input(placeholder, value)
         .on_input(move |v| Message::Edit(field, v))
+        .style(theme::input)
         .into()
 }
 

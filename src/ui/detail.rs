@@ -53,9 +53,12 @@ impl Detail {
         .align_y(Alignment::Center);
 
         let edit = column![
-            text_input("title", &self.title).on_input(Message::TitleEdited),
+            text_input("title", &self.title)
+                .on_input(Message::TitleEdited)
+                .style(theme::input),
             text_editor(&self.body)
                 .on_action(Message::BodyAction)
+                .style(theme::editor)
                 .height(160),
             button(text("Save"))
                 .on_press_maybe(
@@ -108,7 +111,8 @@ impl Detail {
         let comment_box = row![
             text_input("comment", &self.comment)
                 .on_input(Message::CommentEdited)
-                .on_submit(Message::AddComment),
+                .on_submit(Message::AddComment)
+                .style(theme::input),
             button(text("Comment"))
                 .on_press_maybe((!self.comment.trim().is_empty()).then_some(Message::AddComment))
                 .style(theme::button(false)),
@@ -155,11 +159,15 @@ impl Detail {
             .spacing(10)
             .padding(10);
 
-        container(scrollable(content))
-            .width(440)
-            .height(Length::Fill)
-            .style(theme::panel)
-            .into()
+        container(
+            scrollable(content)
+                .direction(theme::thin())
+                .style(theme::scrollbar),
+        )
+        .width(440)
+        .height(Length::Fill)
+        .style(theme::glass)
+        .into()
     }
 }
 

@@ -7,6 +7,7 @@ trello CLI workflow. Spec: `docs/design.md`; read the section a card points at b
 - One binary, subcommands: none = GUI, `mcp --project <KEY>`, `install`, `import-trello`.
 - Only `store` writes SQL. UI and MCP call `store` functions.
 - Never point `.mcp.json` at `target/`: running MCP servers lock the exe (see design.md, Windows exe lock).
+- Window is undecorated: the title bar is `ui::titlebar`; drag and window controls go through `window::{drag, minimize, toggle_maximize, close}` with `App::window`.
 - UI colors come from `ui::theme` tokens, never inline hex.
 - iced 0.14 rules: `rule::horizontal(1)` / `rule::vertical(1)`; the arg is drawn thickness.
 
