@@ -148,6 +148,16 @@ impl Station {
             .map_err(|_| "store lock poisoned".to_string())?;
         f(&mut store).map_err(|e| e.to_string())
     }
+
+    fn own(&self, id: &str) -> Result<(), String> {
+        match id.rsplit_once('-') {
+            Some((key, _)) if !key.eq_ignore_ascii_case(&self.project) => Err(format!(
+                "{id} is not in project {}",
+                self.project.to_ascii_uppercase()
+            )),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[tool_router(vis = "pub(super)")]
@@ -168,6 +178,7 @@ impl Station {
 
     #[tool(description = "Show a card with its plan, comments and last 20 events.")]
     async fn card_show(&self, Parameters(p): Parameters<CardParams>) -> Result<String, String> {
+        self.own(&p.id)?;
         let detail = self.with(|s| s.card_show(&p.id))?;
         Ok(card_text(&detail))
     }
@@ -196,12 +207,14 @@ impl Station {
             tier: p.tier,
             human: p.human,
         };
+        self.own(&p.id)?;
         let card = self.with(|s| s.card_update(&p.id, &p.actor, &patch))?;
         Ok(format!("{} updated: {}", card.key, card.title))
     }
 
     #[tool(description = "Move a card to another column.")]
     async fn card_move(&self, Parameters(p): Parameters<CardMoveParams>) -> Result<String, String> {
+        self.own(&p.id)?;
         let card = self.with(|s| s.card_move(&p.id, &p.actor, p.column))?;
         Ok(format!("{} -> {}", card.key, card.column.as_str()))
     }
@@ -221,14 +234,19 @@ impl Station {
 
     #[tool(description = "Add a comment to a card.")]
     async fn comment(&self, Parameters(p): Parameters<CommentParams>) -> Result<String, String> {
+        self.own(&p.id)?;
         let comment = self.with(|s| s.comment(&p.id, &p.actor, &p.body))?;
         Ok(format!("Commented on {}", comment.card_key))
     }
 
     #[tool(description = "Post a progress line to the activity feed only, not as a comment.")]
     async fn report(&self, Parameters(p): Parameters<ReportParams>) -> Result<String, String> {
-        self.with(|s| s.report(&p.id, &p.actor, &p.message))?;
-        Ok(format!("Reported on {}", p.id.to_ascii_uppercase()))
+        self.own(&p.id)?;
+        let key = self.with(|s| {
+            s.report(&p.id, &p.actor, &p.message)?;
+            Ok(s.card(&p.id)?.key)
+        })?;
+        Ok(format!("Reported on {key}"))
     }
 
     #[tool(description = "Move a card from Doing to Review and record its commit range.")]
@@ -236,6 +254,7 @@ impl Station {
         &self,
         Parameters(p): Parameters<SubmitReviewParams>,
     ) -> Result<String, String> {
+        self.own(&p.id)?;
         let card = self.with(|s| s.submit_review(&p.id, &p.actor, &p.base, &p.head))?;
         Ok(format!(
             "{} -> {} (base {}, head {})",
@@ -253,6 +272,16 @@ impl Station {
         &self,
         Parameters(p): Parameters<ReviewResultParams>,
     ) -> Result<String, String> {
+        self.own(&p.id)?;
+        match p.verdict {
+            Verdict::Clean if !p.findings.is_empty() => {
+                return Err("clean verdict takes no findings".to_string());
+            }
+            Verdict::Findings if p.findings.is_empty() => {
+                return Err("findings verdict needs at least one finding".to_string());
+            }
+            _ => {}
+        }
         let card = self.with(|s| s.review_result(&p.id, &p.actor, p.verdict, &p.findings))?;
         let verdict = match p.verdict {
             Verdict::Clean => "clean".to_string(),
@@ -267,6 +296,7 @@ impl Station {
 
     #[tool(description = "Move a card from Review to Done with a closing comment and the commit.")]
     async fn ship(&self, Parameters(p): Parameters<ShipParams>) -> Result<String, String> {
+        self.own(&p.id)?;
         let card = self.with(|s| s.ship(&p.id, &p.actor, &p.summary, &p.commit))?;
         Ok(format!(
             "{} -> {} (commit {})",
@@ -278,13 +308,12 @@ impl Station {
 
     #[tool(description = "Mark yourself active in the agents strip, optionally on a card.")]
     async fn checkin(&self, Parameters(p): Parameters<CheckinParams>) -> Result<String, String> {
-        self.with(|s| s.checkin(&self.project, &p.actor, p.card.as_deref()))?;
-        Ok(match &p.card {
-            Some(card) => format!(
-                "{} checked in on {}",
-                p.actor.name,
-                card.to_ascii_uppercase()
-            ),
+        let key = self.with(|s| {
+            s.checkin(&self.project, &p.actor, p.card.as_deref())?;
+            p.card.as_deref().map(|id| Ok(s.card(id)?.key)).transpose()
+        })?;
+        Ok(match key {
+            Some(key) => format!("{} checked in on {key}", p.actor.name),
             None => format!("{} checked in", p.actor.name),
         })
     }
@@ -505,6 +534,7 @@ mod tests {
         assert!(text.starts_with("FS-1 [Ready] first\n\n## Body\n"));
 
         assert_eq!(show("FS-9").await.unwrap_err(), "not found: FS-9");
+        assert_eq!(show("XY-1").await.unwrap_err(), "XY-1 is not in project FS");
     }
 
     #[tokio::test]
