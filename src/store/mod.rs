@@ -148,6 +148,12 @@ impl Store {
         let key = project_key(&board.project.key)?;
         self.write(|tx| {
             let project_id = insert_project(tx, &key, &board.project)?;
+            let mut order: Vec<usize> = (0..board.cards.len()).collect();
+            order.sort_by_key(|&i| board.cards[i].created_at);
+            let mut numbers = vec![0_i64; board.cards.len()];
+            for (rank, &i) in order.iter().enumerate() {
+                numbers[i] = rank as i64 + 1;
+            }
             let mut positions = [0_i64; Column::ALL.len()];
             for (i, card) in board.cards.iter().enumerate() {
                 let slot = &mut positions[card.column.index()];
@@ -156,7 +162,7 @@ impl Store {
                      created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
                     params![
                         project_id,
-                        i as i64 + 1,
+                        numbers[i],
                         card.title,
                         card.body,
                         card.column,

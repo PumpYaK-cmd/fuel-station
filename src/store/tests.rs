@@ -508,6 +508,46 @@ fn import_board_round_trip() {
 }
 
 #[test]
+fn import_board_numbers_by_creation() {
+    let (_dir, mut store) = temp();
+    let card = |column, title: &str, created_at| ImportCard {
+        column,
+        title: title.to_string(),
+        body: String::new(),
+        human: false,
+        created_at,
+        comments: vec![],
+    };
+    let board = ImportBoard {
+        project: NewProject {
+            key: "im".to_string(),
+            name: "Imported".to_string(),
+            ..Default::default()
+        },
+        cards: vec![
+            card(Column::Done, "newest", 300),
+            card(Column::Backlog, "oldest", 100),
+            card(Column::Ready, "middle", 200),
+        ],
+    };
+    store.import_board(&board).unwrap();
+    let rows: Vec<_> = store
+        .board("IM", None)
+        .unwrap()
+        .into_iter()
+        .map(|c| (c.key, c.title, c.column, c.position))
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            ("IM-1".to_string(), "oldest".to_string(), Column::Backlog, 0),
+            ("IM-2".to_string(), "middle".to_string(), Column::Ready, 0),
+            ("IM-3".to_string(), "newest".to_string(), Column::Done, 0),
+        ]
+    );
+}
+
+#[test]
 fn derive_key_rules() {
     let none: Vec<String> = vec![];
     assert_eq!(derive_key("fuel-station", &none), "FS");

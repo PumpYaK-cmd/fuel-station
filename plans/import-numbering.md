@@ -1,6 +1,6 @@
 # Import: number cards by creation date (card a2465c51)
 
-base: <filled by agent>
+base: 9b02f45770e9611c7083883374aba1e53b0679a6
 
 ## Context
 `Store::import_board` (`src/store/mod.rs`, ~line 147) assigns `number = i + 1` in
