@@ -1,7 +1,9 @@
 mod activity;
 mod detail;
+mod setup_sheet;
 pub mod theme;
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use iced::keyboard::{self, Key, key::Named};
@@ -9,13 +11,15 @@ use iced::widget::{
     button, column, container, mouse_area, pick_list, row, rule, scrollable, space, text,
     text_editor,
 };
-use iced::{Alignment, Element, Length, Subscription, Theme, mouse};
+use iced::{Alignment, Element, Length, Subscription, Task, Theme, mouse};
 
+use crate::import::{self, ImportReport};
 use crate::setup::agents;
 use crate::store::{
     self, Actor, Agent, CardPatch, CardSummary, Column, Event, Project, Role, Store, StoreError,
 };
 use detail::Detail;
+use setup_sheet::Sheet;
 
 pub fn run() {
     let result = iced::application(boot, update, view)
@@ -46,6 +50,9 @@ struct App {
     events: Vec<Event>,
     agents: Vec<Agent>,
     ticks: u32,
+    sheet: Option<Sheet>,
+    can_import: bool,
+    import: Option<Result<ImportReport, String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +71,13 @@ enum Message {
     MoveTo(Column),
     Step(bool),
     LinkClicked,
+    AddProject,
+    PickFolder(String),
+    Picked(Option<String>, Option<PathBuf>),
+    Repair(String),
+    Sheet(setup_sheet::Message),
+    Import,
+    CloseImport,
 }
 
 fn boot() -> State {
@@ -85,6 +99,9 @@ fn boot() -> State {
         events: Vec::new(),
         agents: Vec::new(),
         ticks: 0,
+        sheet: None,
+        can_import: import::trello_dir().is_dir(),
+        import: None,
     };
     app.reload(None);
     if let Err(e) = agents::install_agents(&agents::agents_dir()) {
@@ -93,9 +110,9 @@ fn boot() -> State {
     Ok(app)
 }
 
-fn update(state: &mut State, message: Message) {
+fn update(state: &mut State, message: Message) -> Task<Message> {
     let Ok(app) = state else {
-        return;
+        return Task::none();
     };
     match message {
         Message::SelectProject(key) => app.reload(Some(key)),
@@ -134,10 +151,10 @@ fn update(state: &mut State, message: Message) {
         }
         Message::Save => {
             let Some(d) = &mut app.detail else {
-                return;
+                return Task::none();
             };
             if d.title.trim().is_empty() {
-                return;
+                return Task::none();
             }
             let body = d.body.text();
             let patch = CardPatch {
@@ -147,7 +164,7 @@ fn update(state: &mut State, message: Message) {
             };
             if patch.title.is_none() && patch.body.is_none() {
                 d.dirty = false;
-                return;
+                return Task::none();
             }
             let result = app.store.card_update(&d.key, &manager(), &patch);
             if result.is_ok() {
@@ -162,10 +179,10 @@ fn update(state: &mut State, message: Message) {
         }
         Message::AddComment => {
             let Some(d) = &mut app.detail else {
-                return;
+                return Task::none();
             };
             if d.comment.trim().is_empty() {
-                return;
+                return Task::none();
             }
             let result = app.store.comment(&d.key, &manager(), d.comment.trim());
             if result.is_ok() {
@@ -181,7 +198,7 @@ fn update(state: &mut State, message: Message) {
         }
         Message::Step(forward) => {
             let Some(d) = &app.detail else {
-                return;
+                return Task::none();
             };
             let column = d.card.card.column;
             let target = if forward {
@@ -195,7 +212,56 @@ fn update(state: &mut State, message: Message) {
             }
         }
         Message::LinkClicked => {}
+        Message::AddProject => return pick_folder(None),
+        Message::PickFolder(key) => return pick_folder(Some(key)),
+        Message::Picked(key, Some(dir)) => {
+            let taken: Vec<String> = app.projects.iter().map(|p| p.key.clone()).collect();
+            app.sheet = match key {
+                None => Some(Sheet::add(&dir, &taken)),
+                Some(key) => app
+                    .projects
+                    .iter()
+                    .find(|p| p.key == key)
+                    .map(|p| Sheet::repair_at(p, &dir, &taken)),
+            };
+        }
+        Message::Picked(_, None) => {}
+        Message::Repair(key) => {
+            app.sheet = app
+                .projects
+                .iter()
+                .find(|p| p.key == key)
+                .map(Sheet::repair);
+        }
+        Message::Sheet(setup_sheet::Message::Close) => app.sheet = None,
+        Message::Sheet(message) => {
+            if let Some(key) = app
+                .sheet
+                .as_mut()
+                .and_then(|sheet| sheet.update(message, &mut app.store))
+            {
+                app.reload(Some(key));
+            }
+        }
+        Message::Import => {
+            app.import = Some(import::import_all(&mut app.store, &import::trello_dir()));
+            app.reload(None);
+        }
+        Message::CloseImport => app.import = None,
     }
+    Task::none()
+}
+
+fn pick_folder(key: Option<String>) -> Task<Message> {
+    Task::perform(
+        async {
+            rfd::AsyncFileDialog::new()
+                .pick_folder()
+                .await
+                .map(|dir| dir.path().to_path_buf())
+        },
+        move |dir| Message::Picked(key.clone(), dir),
+    )
 }
 
 fn manager() -> Actor {
@@ -312,7 +378,7 @@ impl App {
 
     fn view(&self) -> Element<'_, Message> {
         let body =
-            row![self.view_sidebar(), rule::vertical(1), self.view_board()].height(Length::Fill);
+            row![self.view_sidebar(), rule::vertical(1), self.view_main()].height(Length::Fill);
         column![body, rule::horizontal(1), self.view_footer()].into()
     }
 
@@ -331,11 +397,38 @@ impl App {
             .spacing(6)
             .into()
         };
-        column![text("FUEL STATION"), scrollable(projects)]
-            .spacing(20)
+        let add = button(text("+ Add Project"))
+            .width(Length::Fill)
+            .on_press(Message::AddProject)
+            .style(theme::button(false));
+        column![
+            text("FUEL STATION"),
+            scrollable(projects).height(Length::Fill),
+            add
+        ]
+        .spacing(20)
+        .padding(20)
+        .width(200)
+        .into()
+    }
+
+    fn view_main(&self) -> Element<'_, Message> {
+        if let Some(sheet) = &self.sheet {
+            return sheet.view().map(Message::Sheet);
+        }
+        if let Some(import) = &self.import {
+            return view_import(import);
+        }
+        if self.projects.is_empty() && self.can_import {
+            return container(
+                button(text("Import trello boards"))
+                    .on_press(Message::Import)
+                    .style(theme::button(false)),
+            )
             .padding(20)
-            .width(200)
-            .into()
+            .into();
+        }
+        self.view_board()
     }
 
     fn view_board(&self) -> Element<'_, Message> {
@@ -349,11 +442,17 @@ impl App {
         let columns = row(Column::ALL.iter().map(|&col| self.view_column(col)))
             .spacing(10)
             .height(Length::Fill);
+        let action = match project.path {
+            Some(_) => button(text("Repair setup")).on_press(Message::Repair(project.key.clone())),
+            None => button(text("Pick folder")).on_press(Message::PickFolder(project.key.clone())),
+        };
         let header = row![
             text(format!("{} · {}", project.key, project.name)),
             space::horizontal(),
             self.view_agents(),
+            action.style(theme::button(false)),
         ]
+        .spacing(20)
         .align_y(Alignment::Center);
         let mut main = row![column![columns, activity::view(&self.events)].spacing(10)]
             .spacing(10)
@@ -442,6 +541,37 @@ impl App {
         .padding([10, 20])
         .into()
     }
+}
+
+fn view_import(import: &Result<ImportReport, String>) -> Element<'_, Message> {
+    let lines: Element<'_, Message> = match import {
+        Ok(report) => column(
+            report
+                .imported
+                .iter()
+                .map(|(key, name, cards)| {
+                    text(format!("imported {name} as {key}: {cards} cards"))
+                        .color(theme::SUCCESS)
+                        .into()
+                })
+                .chain(report.skipped.iter().map(|(name, reason)| {
+                    text(format!("skipped {name}: {reason}"))
+                        .color(theme::WARNING)
+                        .into()
+                })),
+        )
+        .spacing(6)
+        .into(),
+        Err(e) => text(e).color(theme::DANGER).into(),
+    };
+    let done = button(text("Done"))
+        .on_press(Message::CloseImport)
+        .style(theme::button(false));
+    column![text("Import trello boards"), scrollable(lines), done]
+        .spacing(20)
+        .padding(20)
+        .width(Length::Fill)
+        .into()
 }
 
 fn card_box(card: &CardSummary, selected: bool) -> Element<'_, Message> {

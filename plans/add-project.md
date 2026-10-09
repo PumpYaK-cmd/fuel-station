@@ -1,6 +1,6 @@
 # Add Project: picker, detection, setup sheet, file writes (card 40ef50ca)
 
-base: <filled by agent>
+base: 9b02f45770e9611c7083883374aba1e53b0679a6
 
 ## Context
 design.md > Add Project. Landed before this card: store (incl. `derive_key`), GUI shell

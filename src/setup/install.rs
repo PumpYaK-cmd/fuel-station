@@ -11,7 +11,6 @@ pub fn bin_dir() -> PathBuf {
     PathBuf::from(base).join("FuelStation").join("bin")
 }
 
-#[allow(dead_code)]
 pub fn installed_exe() -> PathBuf {
     bin_dir().join(EXE)
 }
