@@ -166,11 +166,14 @@ impl Sheet {
         (None, Task::none())
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
-        let title = match &self.repair {
+    pub fn view(&self, detecting: bool) -> Element<'_, Message> {
+        let mut title = match &self.repair {
             Some(key) => format!("Repair setup · {key}"),
             None => "Add Project".to_string(),
         };
+        if detecting {
+            title.push_str(" · inspecting folder…");
+        }
         let body = match &self.result {
             Some(result) => self.view_result(result),
             None => self.view_form(),

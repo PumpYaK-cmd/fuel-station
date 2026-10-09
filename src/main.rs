@@ -65,7 +65,10 @@ fn main() {
         setup::install::cleanup_old(&setup::install::bin_dir());
     }
     match cli.command {
-        None => ui::run(),
+        None => {
+            ui::install_panic_hook();
+            ui::run();
+        }
         Some(Command::Mcp { project }) => mcp::run(&project),
         Some(Command::Install) => match setup::install::install() {
             Ok(path) => {

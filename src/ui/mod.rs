@@ -9,8 +9,10 @@ mod titlebar;
 use std::collections::{BTreeSet, HashMap};
 use std::f32::consts::PI;
 use std::fmt;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use iced::keyboard::{self, Key, key::Named};
 use iced::theme::palette::mix;
@@ -45,8 +47,38 @@ pub fn run() {
         })
         .run();
     if let Err(e) = result {
-        eprintln!("fuel-station: {e}");
+        report_fatal(&e.to_string());
     }
+}
+
+pub fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| report_fatal(&info.to_string())));
+}
+
+fn crash_log() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_default()
+        .join("FuelStation")
+        .join("crash.log")
+}
+
+fn report_fatal(info: &str) {
+    let path = crash_log();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(file, "{secs} {}", info.replace('\n', " "));
+    }
+    let _ = rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("Fuel Station")
+        .set_description(format!("{info}\nlogged to {}", path.display()))
+        .show();
 }
 
 type State = Result<App, String>;
@@ -66,6 +98,8 @@ struct App {
     agents: Vec<Agent>,
     ticks: u32,
     sheet: Option<Sheet>,
+    detecting: Option<u64>,
+    next_detect: u64,
     can_import: bool,
     import: Option<Result<ImportReport, String>>,
     window: Option<window::Id>,
@@ -140,7 +174,7 @@ enum Message {
     PickFolder(String),
     Picked(Option<String>, Option<PathBuf>),
     Repair(String),
-    Detected(Option<String>, NewProject, Facts),
+    Detected(u64, Option<String>, Box<NewProject>, Facts),
     Sheet(setup_sheet::Message),
     Import,
     CloseImport,
@@ -195,6 +229,8 @@ fn open() -> State {
         agents: Vec::new(),
         ticks: 0,
         sheet: None,
+        detecting: None,
+        next_detect: 0,
         can_import: import::trello_dir().is_dir(),
         import: None,
         window: None,
@@ -232,7 +268,8 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             app.sheet = None;
             app.import = None;
-            request_leave(app, Leave::Select(key));
+            app.detecting = None;
+            return request_leave(app, Leave::Select(key));
         }
         Message::Tick => {
             app.ticks = app.ticks.wrapping_add(1);
@@ -251,12 +288,12 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             if app.detail.as_ref().is_some_and(|d| d.key == key) {
                 return Task::none();
             }
-            request_leave(app, Leave::Open(key));
+            return request_leave(app, Leave::Open(key));
         }
-        Message::CloseDetail => request_leave(app, Leave::Close),
+        Message::CloseDetail => return request_leave(app, Leave::Close),
         Message::Escape => match &mut app.detail {
             Some(d) if d.leaving.is_some() => d.leaving = None,
-            _ => request_leave(app, Leave::Close),
+            _ => return request_leave(app, Leave::Close),
         },
         Message::TitleEdited(title) => {
             if let Some(d) = &mut app.detail {
@@ -281,14 +318,14 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             if save(app)
                 && let Some(leaving) = app.detail.as_mut().and_then(|d| d.leaving.take())
             {
-                leave(app, leaving);
+                return leave(app, leaving);
             }
         }
         Message::DiscardAndLeave => {
             if let Some(d) = &mut app.detail {
                 d.dirty = false;
                 if let Some(leaving) = d.leaving.take() {
-                    leave(app, leaving);
+                    return leave(app, leaving);
                 }
             }
         }
@@ -337,8 +374,14 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
         }
         Message::LinkClicked => {}
-        Message::AddProject => return pick_folder(None),
-        Message::PickFolder(key) => return pick_folder(Some(key)),
+        Message::AddProject => {
+            app.detecting = None;
+            return pick_folder(None);
+        }
+        Message::PickFolder(key) => {
+            app.detecting = None;
+            return pick_folder(Some(key));
+        }
         Message::Picked(key, Some(dir)) => {
             let taken: Vec<String> = match app.store.project_names() {
                 Ok(names) => names.into_iter().map(|(key, _)| key).collect(),
@@ -347,8 +390,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     return Task::none();
                 }
             };
-            return setup_sheet::detect(dir, taken)
-                .map(move |(form, facts)| Message::Detected(key.clone(), form, facts));
+            return start_detect(app, key, dir, taken);
         }
         Message::Picked(_, None) => {}
         Message::Repair(key) => {
@@ -358,33 +400,50 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             match project.path.as_deref().filter(|p| !p.is_empty()) {
                 Some(path) => {
                     let taken: Vec<String> = app.projects.iter().map(|p| p.key.clone()).collect();
-                    return setup_sheet::detect(PathBuf::from(path), taken).map(
-                        move |(form, facts)| Message::Detected(Some(key.clone()), form, facts),
-                    );
+                    let path = PathBuf::from(path);
+                    return start_detect(app, Some(key), path, taken);
                 }
-                None => app.sheet = Some(Sheet::repair(project, None)),
+                None => {
+                    app.detecting = None;
+                    app.sheet = Some(Sheet::repair(project, None));
+                }
             }
         }
-        Message::Detected(None, form, facts) => app.sheet = Some(Sheet::add(form, facts)),
-        Message::Detected(Some(key), form, facts) => {
-            app.sheet = app
-                .projects
-                .iter()
-                .find(|p| p.key == key)
-                .map(|p| Sheet::repair(p, Some((form, facts))));
+        Message::Detected(id, key, form, facts) => {
+            if app.detecting != Some(id) {
+                return Task::none();
+            }
+            app.detecting = None;
+            app.sheet = match key {
+                None => Some(Sheet::add(*form, facts)),
+                Some(key) => app
+                    .projects
+                    .iter()
+                    .find(|p| p.key == key)
+                    .map(|p| Sheet::repair(p, Some((*form, facts)))),
+            };
         }
-        Message::Sheet(setup_sheet::Message::Close) => app.sheet = None,
+        Message::Sheet(setup_sheet::Message::Close) => {
+            app.sheet = None;
+            app.detecting = None;
+        }
         Message::Sheet(message) => {
             let Some(sheet) = app.sheet.as_mut() else {
                 return Task::none();
             };
             let (key, task) = sheet.update(message, &mut app.store);
-            if let Some(key) = key {
-                app.reload(Some(key));
+            let task = task.map(Message::Sheet);
+            match key {
+                Some(key) if app.selected.as_ref() != Some(&key) => {
+                    return Task::batch([request_leave(app, Leave::Select(key)), task]);
+                }
+                Some(key) => app.reload(Some(key)),
+                None => {}
             }
-            return task.map(Message::Sheet);
+            return task;
         }
         Message::Import => {
+            app.detecting = None;
             app.import = Some(import::import_all(&mut app.store, &import::trello_dir()));
             app.reload(None);
         }
@@ -400,7 +459,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::ToggleMaximize => {
             return app.window.map_or_else(Task::none, window::toggle_maximize);
         }
-        Message::Close => return app.window.map_or_else(Task::none, window::close),
+        Message::Close => return request_leave(app, Leave::Quit),
         Message::HoverCard(key) => app.hovered = Some(key),
         Message::UnhoverCard(key) => {
             if app.hovered.as_ref() == Some(&key) {
@@ -441,14 +500,17 @@ fn save(app: &mut App) -> bool {
     saved
 }
 
-fn request_leave(app: &mut App, target: Leave) {
+fn request_leave(app: &mut App, target: Leave) -> Task<Message> {
     match &mut app.detail {
-        Some(d) if d.dirty => d.leaving = Some(target),
+        Some(d) if d.dirty => {
+            d.leaving = Some(target);
+            Task::none()
+        }
         _ => leave(app, target),
     }
 }
 
-fn leave(app: &mut App, target: Leave) {
+fn leave(app: &mut App, target: Leave) -> Task<Message> {
     match target {
         Leave::Close => app.detail = None,
         Leave::Open(key) => match app.store.card_show(&key) {
@@ -456,7 +518,22 @@ fn leave(app: &mut App, target: Leave) {
             Err(e) => app.error = Some(e.to_string()),
         },
         Leave::Select(key) => app.reload(Some(key)),
+        Leave::Quit => return app.window.map_or_else(Task::none, window::close),
     }
+    Task::none()
+}
+
+fn start_detect(
+    app: &mut App,
+    key: Option<String>,
+    dir: PathBuf,
+    taken: Vec<String>,
+) -> Task<Message> {
+    let id = app.next_detect;
+    app.next_detect += 1;
+    app.detecting = Some(id);
+    setup_sheet::detect(dir, taken)
+        .map(move |(form, facts)| Message::Detected(id, key.clone(), Box::new(form), facts))
 }
 
 fn pick_folder(key: Option<String>) -> Task<Message> {
@@ -574,18 +651,26 @@ impl App {
         }
     }
 
-    fn tray_task(&self) -> Task<Message> {
+    fn tray_task(&mut self) -> Task<Message> {
         let (Some(tray), Some(id)) = (&self.tray, self.window) else {
             return Task::none();
         };
-        Task::batch(
-            notify::tray_messages(tray)
-                .into_iter()
-                .map(|action| match action {
-                    TrayAction::Show => window::minimize(id, false).chain(window::gain_focus(id)),
-                    TrayAction::Quit => window::close(id),
-                }),
-        )
+        let show = || window::minimize(id, false).chain(window::gain_focus(id));
+        let tasks: Vec<Task<Message>> = notify::tray_messages(tray)
+            .into_iter()
+            .map(|action| match action {
+                TrayAction::Show => show(),
+                TrayAction::Quit => {
+                    let quit = request_leave(self, Leave::Quit);
+                    if self.detail.as_ref().is_some_and(|d| d.leaving.is_some()) {
+                        show()
+                    } else {
+                        quit
+                    }
+                }
+            })
+            .collect();
+        Task::batch(tasks)
     }
 
     fn read_error(&mut self, e: StoreError) {
@@ -721,10 +806,15 @@ impl App {
 
     fn view_main(&self) -> Element<'_, Message> {
         if let Some(sheet) = &self.sheet {
-            return sheet.view().map(Message::Sheet);
+            return sheet.view(self.detecting.is_some()).map(Message::Sheet);
         }
         if let Some(import) = &self.import {
             return view_import(import);
+        }
+        if self.detecting.is_some() {
+            return container(text("inspecting folder…").color(theme::TEXT_MUTED))
+                .padding(20)
+                .into();
         }
         if self.projects.is_empty() && self.can_import {
             return container(

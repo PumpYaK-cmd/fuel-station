@@ -12,6 +12,7 @@ pub enum Leave {
     Close,
     Open(String),
     Select(String),
+    Quit,
 }
 
 pub struct Detail {
