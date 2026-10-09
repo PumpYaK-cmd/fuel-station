@@ -1,12 +1,12 @@
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use crate::store::{
-    Actor, Column, ImportBoard, ImportCard, NewProject, Role, ShipMode, Store, derive_key,
+    Actor, Column, ImportBoard, ImportCard, NewProject, Role, ShipMode, Store, derive_key, now,
 };
 
 #[derive(Debug, Default)]
@@ -98,24 +98,36 @@ pub fn import_all(store: &mut Store, trello_dir: &Path) -> Result<ImportReport, 
 
     let projects = store.projects().map_err(|e| e.to_string())?;
     let mut taken: Vec<String> = projects.iter().map(|p| p.key.clone()).collect();
+    let mut names: Vec<String> = projects.into_iter().map(|p| p.name).collect();
     for (dir, file) in boards {
         if file.closed {
             report.skipped.push((file.name, "closed".to_string()));
             continue;
         }
-        if projects.iter().any(|p| p.name == file.name) {
+        if names.contains(&file.name) {
             report
                 .skipped
                 .push((file.name, "already imported".to_string()));
             continue;
         }
         let name = file.name.clone();
-        let mut board = read_board(&dir, file)?;
+        let mut board = match read_board(&dir, file) {
+            Ok(board) => board,
+            Err(e) => {
+                report.skipped.push((name, e));
+                continue;
+            }
+        };
         board.project.key = derive_key(&name, &taken);
         let cards = board.cards.len();
-        let project = store.import_board(&board).map_err(|e| e.to_string())?;
-        taken.push(project.key.clone());
-        report.imported.push((project.key, name, cards));
+        match store.import_board(&board) {
+            Ok(project) => {
+                taken.push(project.key.clone());
+                names.push(name.clone());
+                report.imported.push((project.key, name, cards));
+            }
+            Err(e) => report.skipped.push((name, e.to_string())),
+        }
     }
     Ok(report)
 }
@@ -212,10 +224,6 @@ fn extract_path(desc: &str) -> Option<String> {
 
 fn parse_time(s: &str) -> Option<i64> {
     DateTime::parse_from_rfc3339(s).ok().map(|t| t.timestamp())
-}
-
-fn now() -> i64 {
-    Utc::now().timestamp()
 }
 
 fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, String> {
