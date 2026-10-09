@@ -45,7 +45,8 @@ Crates: `iced` 0.14, `rmcp` 3.5 (`transport-io`, `macros`), `rusqlite` 0.40 (`bu
 Every open Claude session holds a running `fuel-station.exe mcp`. Windows will not let
 `cargo build` overwrite a running exe. So `.mcp.json` never points into `target/`:
 `fuel-station install` copies the build to `%LOCALAPPDATA%\FuelStation\bin\fuel-station.exe`
-(writing to `fuel-station.new.exe` and swapping it in if the old one is locked), and
+(a locked exe is renamed to `fuel-station.old.exe`, which Windows allows for a running exe,
+and deleted at a later start once its sessions close), and
 project setup writes that path.
 
 ## Data model
@@ -180,7 +181,7 @@ dark blue palette instead of Catppuccin.
 - Buttons: no fill, 1 px border, text and border in `primary`; selected uses `accent`;
   hover lifts the fill to `surface_hover`.
 - Panels: `container::Style::default().with_border(border, 1)`; rules are
-  `horizontal_rule(0)` / `vertical_rule(0)`.
+  `rule::horizontal(1)` / `rule::vertical(1)` (iced 0.14: the arg is drawn thickness).
 - Padding and spacing 20 between regions, 3 to 10 inside lists.
 - Square-ish corners: radius 2.
 
