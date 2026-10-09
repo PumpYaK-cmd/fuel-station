@@ -1,6 +1,6 @@
 # MCP prompts: /station:grab, farm, review, card (card 713117ca)
 
-base: <filled by agent>
+base: 9b02f45770e9611c7083883374aba1e53b0679a6
 
 ## Context
 design.md > MCP server (prompts), Roles, Data model ("the plan lives on the card").

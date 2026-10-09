@@ -49,10 +49,15 @@ pub struct Actor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Column {
+    #[serde(alias = "Backlog")]
     Backlog,
+    #[serde(alias = "Ready")]
     Ready,
+    #[serde(alias = "Doing")]
     Doing,
+    #[serde(alias = "Review")]
     Review,
+    #[serde(alias = "Done")]
     Done,
 }
 

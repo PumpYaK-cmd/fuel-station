@@ -510,6 +510,10 @@ mod tests {
             "Ready (2)\n  FS-1  first  [2]  {human}\n  FS-2  second  @fuel:f1"
         );
 
+        let params: BoardParams =
+            serde_json::from_value(serde_json::json!({"column": "Ready"})).unwrap();
+        assert_eq!(station.board(Parameters(params)).await.unwrap(), ready);
+
         let all = station
             .board(Parameters(BoardParams { column: None }))
             .await
