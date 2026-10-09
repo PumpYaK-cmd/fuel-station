@@ -2,6 +2,7 @@ mod activity;
 mod detail;
 mod fx;
 mod notify;
+mod runs;
 mod setup_sheet;
 pub mod theme;
 mod titlebar;
@@ -31,6 +32,7 @@ use crate::store::{
 };
 use detail::{Detail, Leave};
 use notify::TrayAction;
+use runs::{Run, RunEvent};
 use setup_sheet::Sheet;
 
 pub fn run() {
@@ -114,6 +116,7 @@ struct App {
     search: String,
     filter: Filter,
     drag: Option<Drag>,
+    runs: HashMap<String, Run>,
 }
 
 struct Drag {
@@ -201,6 +204,9 @@ enum Message {
     Search(String),
     FilterChanged(Filter),
     FocusSearch,
+    Launch,
+    StopRun,
+    RunEvent(String, RunEvent),
 }
 
 fn boot() -> (State, Task<Message>) {
@@ -258,6 +264,7 @@ fn open() -> State {
         search: String::new(),
         filter: Filter::All,
         drag: None,
+        runs: HashMap::new(),
     };
     app.reload(None);
     match app.store.last_event_id() {
@@ -540,6 +547,39 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::Search(search) => app.search = search,
         Message::FilterChanged(filter) => app.filter = filter,
         Message::FocusSearch => return operation::focus(SEARCH_ID),
+        Message::Launch => {
+            let Some(d) = &app.detail else {
+                return Task::none();
+            };
+            let Some(dir) = app.launch_dir() else {
+                return Task::none();
+            };
+            let key = d.key.clone();
+            let result = app.store.report(&key, &manager(), "launched Truck");
+            app.after_write(result);
+            let (task, run) = runs::start(dir, key.clone());
+            app.runs.insert(key, run);
+            return task;
+        }
+        Message::StopRun => {
+            let Some(d) = &app.detail else {
+                return Task::none();
+            };
+            let key = d.key.clone();
+            if let Some(run) = app.runs.get_mut(&key)
+                && run.is_running()
+            {
+                run.stop();
+                let result = app.store.report(&key, &manager(), "Truck run stopped");
+                app.after_write(result);
+            }
+        }
+        Message::RunEvent(key, event) => {
+            if let Some(report) = app.runs.get_mut(&key).and_then(|run| run.apply(event)) {
+                let result = app.store.report(&key, &manager(), &report);
+                app.after_write(result);
+            }
+        }
     }
     Task::none()
 }
@@ -766,6 +806,23 @@ impl App {
         Task::batch(tasks)
     }
 
+    fn launch_dir(&self) -> Option<PathBuf> {
+        let card = &self.detail.as_ref()?.card.card;
+        if card.human
+            || card.column == Column::Done
+            || self.runs.get(&card.key).is_some_and(Run::is_running)
+        {
+            return None;
+        }
+        self.projects
+            .iter()
+            .find(|p| p.key == card.project_key)?
+            .path
+            .as_deref()
+            .filter(|p| !p.is_empty())
+            .map(PathBuf::from)
+    }
+
     fn cancel_pending(&mut self) {
         self.detecting = None;
         self.picking = None;
@@ -972,7 +1029,11 @@ impl App {
             .spacing(10)
             .height(Length::Fill);
         if let Some(detail) = &self.detail {
-            main = main.push(detail.view(&self.theme));
+            main = main.push(detail.view(
+                &self.theme,
+                self.runs.get(&detail.key),
+                self.launch_dir().is_some(),
+            ));
         }
         column![header, main]
             .spacing(14)
@@ -1032,6 +1093,7 @@ impl App {
                 flash,
                 moving.is_some(),
                 moving.is_some_and(|d| d.key == card.key),
+                self.runs.get(&card.key).is_some_and(Run::is_running),
                 target.is_some_and(|d| {
                     d.key != card.key && d.before.as_deref() == Some(card.key.as_str())
                 }),
@@ -1139,6 +1201,7 @@ fn view_import(import: &Result<ImportReport, String>) -> Element<'_, Message> {
 
 const FLASH_SECS: f32 = 0.6;
 
+#[allow(clippy::too_many_arguments)]
 fn card_box(
     card: &CardSummary,
     selected: bool,
@@ -1146,6 +1209,7 @@ fn card_box(
     flash: Option<f32>,
     dragging: bool,
     dragged: bool,
+    running: bool,
     drop_before: bool,
 ) -> Element<'_, Message> {
     let mut top = row![text(&card.key).color(theme::TEXT_MUTED)];
@@ -1161,6 +1225,8 @@ fn card_box(
                 .size(11)
                 .color(theme::ACCENT),
         );
+    } else if running {
+        body = body.push(text("▶ truck").size(11).color(theme::ACCENT));
     }
     let bar = if dragged {
         theme::PRIMARY

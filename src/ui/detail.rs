@@ -4,6 +4,7 @@ use iced::widget::{
 };
 use iced::{Alignment, Element, Length, Theme};
 
+use super::runs::Run;
 use super::{Message, local_time, role_glyph, theme};
 use crate::store::{CardDetail, Column};
 
@@ -51,7 +52,12 @@ impl Detail {
         self.card = card;
     }
 
-    pub fn view(&self, app_theme: &Theme) -> Element<'_, Message> {
+    pub fn view<'a>(
+        &'a self,
+        app_theme: &'a Theme,
+        run: Option<&'a Run>,
+        can_launch: bool,
+    ) -> Element<'a, Message> {
         let card = &self.card.card;
         let header = row![
             text(format!("{} · {}", card.key, card.column.as_str())),
@@ -168,6 +174,9 @@ impl Detail {
             .push(events)
             .push(rule::horizontal(1))
             .push(moves.wrap())
+            .push(rule::horizontal(1))
+            .push(label("RUN"))
+            .push(run_section(run, can_launch))
             .spacing(10)
             .padding(10);
 
@@ -210,6 +219,26 @@ impl Detail {
 
 fn label(name: &str) -> Element<'_, Message> {
     text(name).color(theme::TEXT_MUTED).into()
+}
+
+fn run_section(run: Option<&Run>, can_launch: bool) -> Element<'_, Message> {
+    let action = match run {
+        Some(run) if run.is_running() => button(text("Stop")).on_press(Message::StopRun),
+        _ => button(text("Launch Truck")).on_press_maybe(can_launch.then_some(Message::Launch)),
+    };
+    let mut section = column![action.style(theme::button(false))].spacing(6);
+    if let Some(run) = run {
+        section = section
+            .push(text(run.status_text()).color(theme::TEXT_MUTED))
+            .push(
+                scrollable(column(run.lines.iter().map(|l| text(l).size(11).into())).spacing(2))
+                    .anchor_bottom()
+                    .direction(theme::thin())
+                    .style(theme::scrollbar)
+                    .height(200),
+            );
+    }
+    section.into()
 }
 
 fn move_button(name: &str, message: Message) -> Element<'_, Message> {

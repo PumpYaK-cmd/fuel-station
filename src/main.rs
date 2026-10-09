@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod import;
+mod launch;
 mod mcp;
 mod setup;
 #[allow(dead_code)]

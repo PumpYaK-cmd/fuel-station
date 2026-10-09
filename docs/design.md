@@ -14,9 +14,27 @@ that has a GUI and an MCP server.
 | Fuel     | Implementer subagent. One card, one plan. | `fuel`: Sonnet, medium · `fuel-high`: Opus, medium |
 | Mechanic | Cold reviewer subagent. Gets the diff location only. | Opus, medium |
 
-Truck spawns Fuel and Mechanic through the Agent tool. Station never starts a process;
-it tracks. Every agent reports through Station's MCP tools, and the GUI shows it live.
-Station launching agents itself is a later card (v2), not v1.
+Truck spawns Fuel and Mechanic through the Agent tool. Every agent reports through
+Station's MCP tools, and the GUI shows it live.
+
+### Launching
+
+Station can start Truck on a card from the card detail panel (RUN section).
+- Command: `claude -p "/mcp__station__grab <KEY>" --output-format stream-json --verbose
+  --permission-mode auto --max-budget-usd 10` in the project's `path`, plus
+  `--mcp-config <path>/.mcp.json` when that file exists. One run per card; several cards
+  may run at once.
+- Auth is whatever the user's `claude` CLI is logged into; Station stores no keys.
+- Permissions: `auto`, never `bypassPermissions`. Denials show in the run log.
+- Cost: `RUN_BUDGET_USD` (10) per run; the final `result` line's cost and turns show in
+  the run status.
+- Process: `CREATE_NO_WINDOW`, stdout and stderr piped into one log (last 300 lines).
+  Stop = `taskkill /PID <pid> /T /F`, then the stream is aborted. Closing Station stops
+  every running run the same way.
+- Runs live in memory only. The card gets `report` events from `manager`: "launched
+  Truck", "Truck run stopped", "Truck run exited: ...".
+- Enabled when the project has a path, the card is not human, not in Done, and no run is
+  active for it. A running card shows `▶ truck` on the board.
 
 ## Architecture
 
@@ -246,5 +264,5 @@ manual checklists on their cards.
 In: store, MCP tools and prompts, agent files, GUI (sidebar, board, card detail, activity,
 live refresh, theme), Add Project, install, trello import, cutover of the global workflow.
 
-Out (backlog): drag-and-drop, search and filter, Station launching agents, per-card
+Out (backlog): drag-and-drop, search and filter, per-card
 time/cost stats, multi-window.

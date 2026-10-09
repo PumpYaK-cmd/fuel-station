@@ -1,6 +1,6 @@
 # launch: Station launches Truck on a card with live output and stop (card 88ae4d5c)
 
-base: (set at claim)
+base: 9ddc7da39f95f247a790ea1b8edb13174e4d274a
 
 ## Context
 design.md says Station never starts a process (v1). This card is the v2 design pass and
