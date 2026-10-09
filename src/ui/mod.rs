@@ -11,11 +11,12 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use iced::keyboard::{self, Key, key::Named};
+use iced::theme::palette::mix;
 use iced::widget::{
     button, canvas, column, container, mouse_area, pick_list, progress_bar, row, rule, scrollable,
     space, stack, text, text_editor,
 };
-use iced::{Alignment, Color, Element, Length, Size, Subscription, Task, Theme, mouse, window};
+use iced::{Alignment, Element, Length, Size, Subscription, Task, Theme, mouse, window};
 
 use crate::import::{self, ImportReport};
 use crate::setup::agents;
@@ -100,11 +101,15 @@ enum Message {
     Minimize,
     ToggleMaximize,
     Close,
-    Resized,
-    HoverCard(Option<String>),
+    HoverCard(String),
+    UnhoverCard(String),
 }
 
-fn boot() -> State {
+fn boot() -> (State, Task<Message>) {
+    (open(), window::latest().map(Message::WindowId))
+}
+
+fn open() -> State {
     let store = Store::open_default()
         .map_err(|e| format!("cannot open {}: {e}", store::db_path().display()))?;
     let mut app = App {
@@ -153,9 +158,6 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::Tick => {
             app.ticks = app.ticks.wrapping_add(1);
-            if app.window.is_none() {
-                return window::latest().map(Message::WindowId);
-            }
             match app.store.data_version() {
                 Ok(version) if version != app.data_version || app.ticks % 17 == 0 => {
                     app.reload(app.selected.clone())
@@ -298,8 +300,12 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             return app.window.map_or_else(Task::none, window::toggle_maximize);
         }
         Message::Close => return app.window.map_or_else(Task::none, window::close),
-        Message::Resized => app.grid.clear(),
-        Message::HoverCard(key) => app.hovered = key,
+        Message::HoverCard(key) => app.hovered = Some(key),
+        Message::UnhoverCard(key) => {
+            if app.hovered.as_ref() == Some(&key) {
+                app.hovered = None;
+            }
+        }
     }
     Task::none()
 }
@@ -335,9 +341,8 @@ fn subscription(state: &State) -> Subscription<Message> {
         Ok(app) => {
             let tick = iced::time::every(Duration::from_millis(300)).map(|_| Message::Tick);
             let frames = window::frames().map(Message::Frame);
-            let resized = window::resize_events().map(|_| Message::Resized);
             if app.detail.is_none() {
-                return Subscription::batch([tick, frames, resized]);
+                return Subscription::batch([tick, frames]);
             }
             let keys = keyboard::listen().filter_map(|event| match event {
                 keyboard::Event::KeyPressed {
@@ -350,7 +355,7 @@ fn subscription(state: &State) -> Subscription<Message> {
                 },
                 _ => None,
             });
-            Subscription::batch([tick, frames, resized, keys])
+            Subscription::batch([tick, frames, keys])
         }
         Err(_) => Subscription::none(),
     }
@@ -734,19 +739,10 @@ fn card_box(
             .style(theme::card(border)),
     )
     .on_press(Message::OpenCard(card.key.clone()))
-    .on_enter(Message::HoverCard(Some(card.key.clone())))
-    .on_exit(Message::HoverCard(None))
+    .on_enter(Message::HoverCard(card.key.clone()))
+    .on_exit(Message::UnhoverCard(card.key.clone()))
     .interaction(mouse::Interaction::Pointer)
     .into()
-}
-
-fn mix(from: Color, to: Color, k: f32) -> Color {
-    Color {
-        r: from.r + (to.r - from.r) * k,
-        g: from.g + (to.g - from.g) * k,
-        b: from.b + (to.b - from.b) * k,
-        a: from.a + (to.a - from.a) * k,
-    }
 }
 
 fn local_time(secs: i64, format: &str) -> String {

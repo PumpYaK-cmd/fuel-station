@@ -185,7 +185,7 @@ dark blue palette, dressed as a space docking bay. Reference mockup:
 One clock: `App::t`, seconds since boot, set from `window::frames()`. Every animation is a
 pure function of `t` (sweep, bracket pulse, agent dot, LIVE blink) or of an `Instant` stored
 on reload (`App::reloaded` for gauges, `App::appeared` for new-card flashes). No per-widget
-animation state. The grid is a `canvas::Cache` cleared on resize; only the sweep and the
+animation state. The grid is a `canvas::Cache`, rebuilt when the window size changes; only the sweep and the
 brackets redraw every frame.
 
 ### Style rules (from pumpbin)
