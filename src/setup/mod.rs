@@ -6,6 +6,10 @@ pub mod write;
 use std::path::Path;
 use std::process::Command;
 
+fn in_work_tree(dir: &Path) -> bool {
+    git(dir, &["rev-parse", "--is-inside-work-tree"]).is_ok()
+}
+
 fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .arg("-C")

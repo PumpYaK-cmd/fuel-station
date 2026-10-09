@@ -115,7 +115,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         return Task::none();
     };
     match message {
-        Message::SelectProject(key) => app.reload(Some(key)),
+        Message::SelectProject(key) => {
+            app.sheet = None;
+            app.import = None;
+            app.reload(Some(key));
+        }
         Message::Tick => {
             app.ticks = app.ticks.wrapping_add(1);
             match app.store.data_version() {

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use super::git;
+use super::{git, in_work_tree};
 use crate::store::{Project, ShipMode};
 
 const BLOCK_START: &str = "<!-- station -->";
@@ -30,7 +30,7 @@ pub fn apply(p: &Project, exe: &Path) -> Vec<Written> {
         return vec![Written::new(PathBuf::new(), "error: project has no path")];
     };
     let mut out = vec![mcp_json(dir, &p.key, exe), claude_md(dir, &p.key)];
-    if p.ship_mode == ShipMode::Git && !dir.join(".git").exists() {
+    if p.ship_mode == ShipMode::Git && !in_work_tree(dir) {
         git_init(dir, &p.default_branch, &mut out);
     }
     out
@@ -106,6 +106,9 @@ fn claude_md(dir: &Path, key: &str) -> Written {
     );
     let content = match existing.as_deref() {
         None | Some("") => format!("{block}\n"),
+        Some(text) if text.contains(BLOCK_START) && block_range(text).is_none() => {
+            return Written::new(path, format!("error: {BLOCK_START} without {BLOCK_END}"));
+        }
         Some(text) => match block_range(text) {
             Some((start, end)) => format!("{}{block}{}", &text[..start], &text[end..]),
             None if text.ends_with('\n') => format!("{text}\n{block}\n"),
@@ -260,6 +263,34 @@ mod tests {
             fs::read_to_string(tmp.path().join(".mcp.json")).unwrap(),
             "{ nope"
         );
+    }
+
+    #[test]
+    fn unclosed_block_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let old = format!(
+            "{BLOCK_START}
+mine
+"
+        );
+        fs::write(tmp.path().join("CLAUDE.md"), &old).unwrap();
+        let p = project(tmp.path(), ShipMode::Studio);
+        assert!(apply(&p, Path::new(EXE))[1].action.starts_with("error"));
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("CLAUDE.md")).unwrap(),
+            old
+        );
+    }
+
+    #[test]
+    fn subfolder_of_repo_is_not_initialised() {
+        let tmp = tempfile::tempdir().unwrap();
+        git(tmp.path(), &["init", "-b", "main"]).unwrap();
+        let sub = tmp.path().join("game");
+        fs::create_dir(&sub).unwrap();
+        let p = project(&sub, ShipMode::Git);
+        assert_eq!(actions(&apply(&p, Path::new(EXE))), ["created", "created"]);
+        assert!(!sub.join(".git").exists());
     }
 
     #[test]

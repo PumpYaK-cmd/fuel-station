@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use super::git;
+use super::{git, in_work_tree};
 use crate::store::{NewProject, ShipMode, derive_key};
 
 const CARGO_GATE: &str =
@@ -19,8 +19,8 @@ pub fn detect(dir: &Path, taken_keys: &[String]) -> NewProject {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| dir.display().to_string());
-    let default_branch = match git(dir, &["rev-parse", "--abbrev-ref", "HEAD"]) {
-        Ok(branch) if !branch.is_empty() && branch != "HEAD" => branch,
+    let default_branch = match git(dir, &["symbolic-ref", "--short", "HEAD"]) {
+        Ok(branch) if !branch.is_empty() => branch,
         _ => "main".to_string(),
     };
     let (verify_cmd, ship_mode) = gate(dir);
@@ -42,7 +42,7 @@ pub fn detect(dir: &Path, taken_keys: &[String]) -> NewProject {
 }
 
 pub fn facts(dir: &Path) -> Facts {
-    let is_git = dir.join(".git").exists();
+    let is_git = in_work_tree(dir);
     Facts {
         is_git,
         remote: is_git
@@ -179,20 +179,6 @@ mod tests {
         let tmp = dir_with(&[("CLAUDE.md", "x")]);
         let dir = tmp.path();
         git(dir, &["init", "-b", "trunk"]).unwrap();
-        git(
-            dir,
-            &[
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "--allow-empty",
-                "-m",
-                "x",
-            ],
-        )
-        .unwrap();
         git(
             dir,
             &["remote", "add", "origin", "https://example.com/r.git"],
