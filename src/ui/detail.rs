@@ -152,25 +152,7 @@ impl Detail {
             moves = moves.push(move_button("Next →", Message::Step(true)));
         }
 
-        let bar = self.leaving.is_some().then(|| {
-            row![
-                text("Unsaved changes").color(theme::WARNING),
-                button(text("Save"))
-                    .on_press_maybe(
-                        (!self.title.trim().is_empty()).then_some(Message::SaveAndLeave),
-                    )
-                    .style(theme::button(false)),
-                button(text("Discard"))
-                    .on_press(Message::DiscardAndLeave)
-                    .style(theme::button(false)),
-                button(text("Keep editing"))
-                    .on_press(Message::KeepEditing)
-                    .style(theme::button(false)),
-            ]
-            .spacing(6)
-            .padding(10)
-            .align_y(Alignment::Center)
-        });
+        let bar = self.leave_bar();
 
         let mut content = column![header, edit, rule::horizontal(1), label("PLAN"), plan];
         if !meta.is_empty() {
@@ -190,7 +172,7 @@ impl Detail {
             .padding(10);
 
         container(
-            column![].extend(bar.map(Element::from)).push(
+            column![].extend(bar).push(
                 scrollable(content)
                     .direction(theme::thin())
                     .style(theme::scrollbar),
@@ -200,6 +182,29 @@ impl Detail {
         .height(Length::Fill)
         .style(theme::glass)
         .into()
+    }
+
+    pub fn leave_bar(&self) -> Option<Element<'_, Message>> {
+        self.leaving.is_some().then(|| {
+            row![
+                text("Unsaved changes").color(theme::WARNING),
+                button(text("Save"))
+                    .on_press_maybe(
+                        (!self.title.trim().is_empty()).then_some(Message::SaveAndLeave),
+                    )
+                    .style(theme::button(false)),
+                button(text("Discard"))
+                    .on_press(Message::DiscardAndLeave)
+                    .style(theme::button(false)),
+                button(text("Keep editing"))
+                    .on_press(Message::KeepEditing)
+                    .style(theme::button(false)),
+            ]
+            .spacing(6)
+            .padding(10)
+            .align_y(Alignment::Center)
+            .into()
+        })
     }
 }
 

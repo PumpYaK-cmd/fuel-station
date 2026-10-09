@@ -99,6 +99,7 @@ struct App {
     ticks: u32,
     sheet: Option<Sheet>,
     detecting: Option<u64>,
+    picking: Option<u64>,
     next_detect: u64,
     can_import: bool,
     import: Option<Result<ImportReport, String>>,
@@ -172,7 +173,7 @@ enum Message {
     LinkClicked,
     AddProject,
     PickFolder(String),
-    Picked(Option<String>, Option<PathBuf>),
+    Picked(u64, Option<String>, Option<PathBuf>),
     Repair(String),
     Detected(u64, Option<String>, Box<NewProject>, Facts),
     Sheet(setup_sheet::Message),
@@ -230,6 +231,7 @@ fn open() -> State {
         ticks: 0,
         sheet: None,
         detecting: None,
+        picking: None,
         next_detect: 0,
         can_import: import::trello_dir().is_dir(),
         import: None,
@@ -268,7 +270,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             app.sheet = None;
             app.import = None;
-            app.detecting = None;
+            app.cancel_pending();
             return request_leave(app, Leave::Select(key));
         }
         Message::Tick => {
@@ -374,15 +376,13 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
         }
         Message::LinkClicked => {}
-        Message::AddProject => {
-            app.detecting = None;
-            return pick_folder(None);
-        }
-        Message::PickFolder(key) => {
-            app.detecting = None;
-            return pick_folder(Some(key));
-        }
-        Message::Picked(key, Some(dir)) => {
+        Message::AddProject => return start_pick(app, None),
+        Message::PickFolder(key) => return start_pick(app, Some(key)),
+        Message::Picked(id, key, Some(dir)) => {
+            if app.picking != Some(id) {
+                return Task::none();
+            }
+            app.picking = None;
             let taken: Vec<String> = match app.store.project_names() {
                 Ok(names) => names.into_iter().map(|(key, _)| key).collect(),
                 Err(e) => {
@@ -392,7 +392,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             };
             return start_detect(app, key, dir, taken);
         }
-        Message::Picked(_, None) => {}
+        Message::Picked(id, _, None) => {
+            if app.picking == Some(id) {
+                app.picking = None;
+            }
+        }
         Message::Repair(key) => {
             let Some(project) = app.projects.iter().find(|p| p.key == key) else {
                 return Task::none();
@@ -405,6 +409,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
                 None => {
                     app.detecting = None;
+                    app.picking = None;
                     app.sheet = Some(Sheet::repair(project, None));
                 }
             }
@@ -425,7 +430,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::Sheet(setup_sheet::Message::Close) => {
             app.sheet = None;
-            app.detecting = None;
+            app.cancel_pending();
         }
         Message::Sheet(message) => {
             let Some(sheet) = app.sheet.as_mut() else {
@@ -435,6 +440,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             let task = task.map(Message::Sheet);
             match key {
                 Some(key) if app.selected.as_ref() != Some(&key) => {
+                    app.reload(app.selected.clone());
                     return Task::batch([request_leave(app, Leave::Select(key)), task]);
                 }
                 Some(key) => app.reload(Some(key)),
@@ -443,7 +449,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             return task;
         }
         Message::Import => {
-            app.detecting = None;
+            app.cancel_pending();
             app.import = Some(import::import_all(&mut app.store, &import::trello_dir()));
             app.reload(None);
         }
@@ -532,11 +538,20 @@ fn start_detect(
     let id = app.next_detect;
     app.next_detect += 1;
     app.detecting = Some(id);
+    app.picking = None;
     setup_sheet::detect(dir, taken)
         .map(move |(form, facts)| Message::Detected(id, key.clone(), Box::new(form), facts))
 }
 
-fn pick_folder(key: Option<String>) -> Task<Message> {
+fn start_pick(app: &mut App, key: Option<String>) -> Task<Message> {
+    let id = app.next_detect;
+    app.next_detect += 1;
+    app.cancel_pending();
+    app.picking = Some(id);
+    pick_folder(id, key)
+}
+
+fn pick_folder(id: u64, key: Option<String>) -> Task<Message> {
     Task::perform(
         async {
             rfd::AsyncFileDialog::new()
@@ -544,7 +559,7 @@ fn pick_folder(key: Option<String>) -> Task<Message> {
                 .await
                 .map(|dir| dir.path().to_path_buf())
         },
-        move |dir| Message::Picked(key.clone(), dir),
+        move |dir| Message::Picked(id, key.clone(), dir),
     )
 }
 
@@ -671,6 +686,18 @@ impl App {
             })
             .collect();
         Task::batch(tasks)
+    }
+
+    fn cancel_pending(&mut self) {
+        self.detecting = None;
+        self.picking = None;
+    }
+
+    fn with_leave_bar<'a>(&'a self, content: Element<'a, Message>) -> Element<'a, Message> {
+        match self.detail.as_ref().and_then(Detail::leave_bar) {
+            Some(bar) => column![bar, content].into(),
+            None => content,
+        }
     }
 
     fn read_error(&mut self, e: StoreError) {
@@ -806,15 +833,17 @@ impl App {
 
     fn view_main(&self) -> Element<'_, Message> {
         if let Some(sheet) = &self.sheet {
-            return sheet.view(self.detecting.is_some()).map(Message::Sheet);
+            return self.with_leave_bar(sheet.view(self.detecting.is_some()).map(Message::Sheet));
         }
         if let Some(import) = &self.import {
-            return view_import(import);
+            return self.with_leave_bar(view_import(import));
         }
         if self.detecting.is_some() {
-            return container(text("inspecting folder…").color(theme::TEXT_MUTED))
-                .padding(20)
-                .into();
+            return self.with_leave_bar(
+                container(text("inspecting folder…").color(theme::TEXT_MUTED))
+                    .padding(20)
+                    .into(),
+            );
         }
         if self.projects.is_empty() && self.can_import {
             return container(
