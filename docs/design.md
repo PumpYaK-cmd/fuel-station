@@ -183,6 +183,11 @@ dark blue palette, dressed as a space docking bay. Reference mockup:
   whatever theme is picked.
 - Moving cards in v1: buttons in the detail panel and `←`/`→` shortcuts. Drag-and-drop is a
   backlog card.
+- **Toasts and tray** (`ui::notify`): Windows toasts (notify-rust), only while the window is
+  unfocused, for every project: `submit_review`, `ship`, `review_result` with findings, and
+  `card_move` into Review or Done. Title = project name. Polled from `events_after` on the
+  live-refresh tick; events older than startup never toast. Tray icon (tray-icon) while the
+  GUI runs: left click restores and focuses, menu Show / Quit. Close still quits.
 
 ### Motion
 
@@ -241,5 +246,5 @@ manual checklists on their cards.
 In: store, MCP tools and prompts, agent files, GUI (sidebar, board, card detail, activity,
 live refresh, theme), Add Project, install, trello import, cutover of the global workflow.
 
-Out (backlog): drag-and-drop, search and filter, toasts, tray icon, Station launching
-agents, per-card time/cost stats, multi-window.
+Out (backlog): drag-and-drop, search and filter, Station launching agents, per-card
+time/cost stats, multi-window.

@@ -465,6 +465,37 @@ fn data_version_changes_after_other_connection_writes() {
 }
 
 #[test]
+fn events_after_spans_projects_in_order() {
+    let (_dir, mut store) = temp();
+    with_project(&mut store);
+    store
+        .project_add(&NewProject {
+            key: "ot".to_string(),
+            name: "Other".to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+    let mark = store.last_event_id().unwrap();
+    add(&mut store, Column::Ready, "a");
+    store
+        .card_add("OT", &truck(), Column::Ready, "b", "")
+        .unwrap();
+    store.card_move("FS-1", &truck(), Column::Doing).unwrap();
+    let events = store.events_after(mark).unwrap();
+    let seen: Vec<(&str, &str)> = events
+        .iter()
+        .map(|e| (e.project_key.as_str(), e.kind.as_str()))
+        .collect();
+    assert_eq!(
+        seen,
+        [("FS", "card_add"), ("OT", "card_add"), ("FS", "card_move")]
+    );
+    assert!(events.windows(2).all(|w| w[0].id < w[1].id));
+    assert_eq!(store.last_event_id().unwrap(), events[2].id);
+    assert!(store.events_after(events[2].id).unwrap().is_empty());
+}
+
+#[test]
 fn columns_parse_and_step() {
     assert_eq!("doing".parse::<Column>().unwrap(), Column::Doing);
     assert!("nope".parse::<Column>().is_err());

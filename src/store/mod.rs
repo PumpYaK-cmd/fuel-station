@@ -695,6 +695,22 @@ impl Store {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(events)
     }
+
+    pub fn events_after(&self, id: i64) -> Result<Vec<Event>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "{EVENT_SELECT} WHERE e.id > ?1 ORDER BY e.id LIMIT 50"
+        ))?;
+        let events = stmt
+            .query_map([id], event_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(events)
+    }
+
+    pub fn last_event_id(&self) -> Result<i64> {
+        Ok(self
+            .conn
+            .query_row("SELECT COALESCE(MAX(id), 0) FROM events", [], |r| r.get(0))?)
+    }
 }
 
 pub(crate) fn now() -> i64 {

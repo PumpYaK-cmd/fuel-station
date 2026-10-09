@@ -1,6 +1,7 @@
 mod activity;
 mod detail;
 mod fx;
+mod notify;
 mod setup_sheet;
 pub mod theme;
 mod titlebar;
@@ -26,6 +27,7 @@ use crate::store::{
     StoreError,
 };
 use detail::{Detail, Leave};
+use notify::TrayAction;
 use setup_sheet::Sheet;
 
 pub fn run() {
@@ -72,6 +74,9 @@ struct App {
     appeared: HashMap<String, Instant>,
     reloaded: Instant,
     grid: canvas::Cache,
+    tray: Option<notify::Tray>,
+    focused: bool,
+    last_event: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -109,10 +114,20 @@ enum Message {
     Close,
     HoverCard(String),
     UnhoverCard(String),
+    Focus(bool),
 }
 
 fn boot() -> (State, Task<Message>) {
-    (open(), window::latest().map(Message::WindowId))
+    let mut state = open();
+    if let Ok(app) = &mut state {
+        match notify::tray() {
+            Ok(tray) => app.tray = Some(tray),
+            Err(e) => {
+                app.error.get_or_insert_with(|| format!("tray icon: {e}"));
+            }
+        }
+    }
+    (state, window::latest().map(Message::WindowId))
 }
 
 fn open() -> State {
@@ -144,8 +159,15 @@ fn open() -> State {
         appeared: HashMap::new(),
         reloaded: Instant::now(),
         grid: canvas::Cache::new(),
+        tray: None,
+        focused: true,
+        last_event: 0,
     };
     app.reload(None);
+    match app.store.last_event_id() {
+        Ok(id) => app.last_event = id,
+        Err(e) => app.read_error(e),
+    }
     if let Err(e) = agents::install_agents(&agents::agents_dir()) {
         app.error = Some(format!("agent files: {e}"));
     }
@@ -169,11 +191,13 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             app.ticks = app.ticks.wrapping_add(1);
             match app.store.data_version() {
                 Ok(version) if version != app.data_version || app.ticks % 17 == 0 => {
-                    app.reload(app.selected.clone())
+                    app.reload(app.selected.clone());
+                    app.notify_events();
                 }
                 Ok(_) => app.clear_read_error(),
                 Err(e) => app.read_error(e),
             }
+            return app.tray_task();
         }
         Message::ThemeChanged(theme) => app.theme = theme,
         Message::OpenCard(key) => {
@@ -336,6 +360,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 app.hovered = None;
             }
         }
+        Message::Focus(focused) => app.focused = focused,
     }
     Task::none()
 }
@@ -415,8 +440,13 @@ fn subscription(state: &State) -> Subscription<Message> {
         Ok(app) => {
             let tick = iced::time::every(Duration::from_millis(300)).map(|_| Message::Tick);
             let frames = window::frames().map(Message::Frame);
+            let focus = window::events().filter_map(|(_, event)| match event {
+                window::Event::Focused => Some(Message::Focus(true)),
+                window::Event::Unfocused => Some(Message::Focus(false)),
+                _ => None,
+            });
             if app.detail.is_none() {
-                return Subscription::batch([tick, frames]);
+                return Subscription::batch([tick, frames, focus]);
             }
             let keys = keyboard::listen().filter_map(|event| match event {
                 keyboard::Event::KeyPressed {
@@ -429,7 +459,7 @@ fn subscription(state: &State) -> Subscription<Message> {
                 },
                 _ => None,
             });
-            Subscription::batch([tick, frames, keys])
+            Subscription::batch([tick, frames, focus, keys])
         }
         Err(_) => Subscription::none(),
     }
@@ -449,6 +479,44 @@ impl App {
         }
     }
 
+    fn notify_events(&mut self) {
+        let events = match self.store.events_after(self.last_event) {
+            Ok(events) => events,
+            Err(e) => return self.read_error(e),
+        };
+        let Some(last) = events.last() else {
+            return;
+        };
+        self.last_event = last.id;
+        if self.focused {
+            return;
+        }
+        for e in &events {
+            if let Some(body) = notify::toast_text(e) {
+                let title = self
+                    .projects
+                    .iter()
+                    .find(|p| p.key == e.project_key)
+                    .map_or(e.project_key.as_str(), |p| p.name.as_str());
+                notify::toast(title, &body);
+            }
+        }
+    }
+
+    fn tray_task(&self) -> Task<Message> {
+        let (Some(tray), Some(id)) = (&self.tray, self.window) else {
+            return Task::none();
+        };
+        Task::batch(
+            notify::tray_messages(tray)
+                .into_iter()
+                .map(|action| match action {
+                    TrayAction::Show => window::minimize(id, false).chain(window::gain_focus(id)),
+                    TrayAction::Quit => window::close(id),
+                }),
+        )
+    }
+
     fn read_error(&mut self, e: StoreError) {
         self.error = Some(e.to_string());
         self.read_failed = true;
@@ -466,6 +534,7 @@ impl App {
             Ok(_) => {
                 self.error = None;
                 self.reload(self.selected.clone());
+                self.notify_events();
             }
             Err(e) => self.error = Some(e.to_string()),
         }
