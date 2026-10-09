@@ -62,7 +62,7 @@ fn main() {
                         }
                     }
                     Err(e) => {
-                        eprintln!("install failed: {e}");
+                        eprintln!("agent files failed: {e}");
                         std::process::exit(1);
                     }
                 }
