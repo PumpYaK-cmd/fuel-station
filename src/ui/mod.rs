@@ -18,10 +18,13 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use iced::keyboard::{self, Key, key::Named};
 use iced::theme::palette::mix;
 use iced::widget::{
-    button, canvas, column, container, mouse_area, operation, pick_list, progress_bar, row, rule,
-    scrollable, space, stack, text, text_editor, text_input,
+    button, canvas, column, container, float, mouse_area, operation, pick_list, pin, progress_bar,
+    row, rule, scrollable, space, stack, text, text_editor, text_input,
 };
-use iced::{Alignment, Element, Length, Padding, Size, Subscription, Task, Theme, mouse, window};
+use iced::{
+    Alignment, Color, Element, Length, Padding, Point, Size, Subscription, Task, Theme, Vector,
+    mouse, window,
+};
 
 use crate::import::{self, ImportReport};
 use crate::setup::agents;
@@ -117,14 +120,63 @@ struct App {
     filter: Filter,
     drag: Option<Drag>,
     runs: HashMap<String, Run>,
+    landed: Option<(String, Instant)>,
 }
+
+type Slot = (Column, Option<String>);
 
 struct Drag {
     key: String,
-    from: Column,
     over: Option<Column>,
-    before: Option<String>,
+    over_at: Instant,
     moved: bool,
+    cursor: Point,
+    lifted: Option<Instant>,
+    slot: Option<Slot>,
+    slot_at: Instant,
+    prev: Option<(Slot, Instant, f32)>,
+}
+
+impl Drag {
+    fn lift(&mut self) {
+        if !self.moved {
+            self.moved = true;
+            self.lifted = Some(Instant::now());
+        }
+    }
+
+    fn set_over(&mut self, column: Column) {
+        if self.over != Some(column) {
+            self.over = Some(column);
+            self.over_at = Instant::now();
+        }
+    }
+
+    fn set_slot(&mut self, slot: Option<Slot>) {
+        if self.slot == slot {
+            return;
+        }
+        let now = Instant::now();
+        let open = ease_out(self.slot_at.elapsed().as_secs_f32() / GAP_SECS);
+        self.prev = self.slot.take().map(|old| (old, now, open));
+        self.slot = slot;
+        self.slot_at = now;
+    }
+
+    fn gap(&self, column: Column, before: Option<&str>) -> f32 {
+        let is = |slot: &Slot| slot.0 == column && slot.1.as_deref() == before;
+        let opening = match &self.slot {
+            Some(slot) if is(slot) => ease_out(self.slot_at.elapsed().as_secs_f32() / GAP_SECS),
+            _ => 0.0,
+        };
+        let closing = match &self.prev {
+            Some((slot, at, from)) if is(slot) => {
+                from * (1.0 - ease_out(at.elapsed().as_secs_f32() / GAP_SECS))
+            }
+            _ => 0.0,
+        };
+        DROP_GAP * (opening + closing)
+    }
 }
 
 const SEARCH_ID: &str = "search";
@@ -198,7 +250,9 @@ enum Message {
     EnterCard(String),
     ExitCard(String),
     EnterColumn(Column),
+    EnterTail(Column),
     DropOn(Column),
+    DragMove(Point),
     CancelDrag,
     Focus(bool),
     Search(String),
@@ -265,6 +319,7 @@ fn open() -> State {
         filter: Filter::All,
         drag: None,
         runs: HashMap::new(),
+        landed: None,
     };
     app.reload(None);
     match app.store.last_event_id() {
@@ -467,7 +522,16 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::CloseImport => app.import = None,
         Message::WindowId(id) => app.window = id,
-        Message::Frame(now) => app.t = now.duration_since(app.booted).as_secs_f32(),
+        Message::Frame(now) => {
+            app.t = now.duration_since(app.booted).as_secs_f32();
+            if app
+                .landed
+                .as_ref()
+                .is_some_and(|(_, at)| now.duration_since(*at).as_secs_f32() >= LAND_SECS)
+            {
+                app.landed = None;
+            }
+        }
         Message::DragWindow => return app.window.map_or_else(Task::none, window::drag),
         Message::Minimize => {
             return app
@@ -480,21 +544,28 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::Close => return request_leave(app, Leave::Quit),
         Message::Press(key) => {
             if let Some(card) = app.board.iter().find(|c| c.key == key) {
+                let now = Instant::now();
                 app.drag = Some(Drag {
                     key,
-                    from: card.column,
                     over: Some(card.column),
-                    before: None,
+                    over_at: now,
                     moved: false,
+                    cursor: Point::ORIGIN,
+                    lifted: None,
+                    slot: None,
+                    slot_at: now,
+                    prev: None,
                 });
             }
         }
         Message::EnterCard(key) => {
             let column = app.board.iter().find(|c| c.key == key).map(|c| c.column);
             if let (Some(drag), Some(column)) = (&mut app.drag, column) {
-                drag.moved |= key != drag.key;
-                drag.over = Some(column);
-                drag.before = Some(key.clone());
+                if key != drag.key {
+                    drag.lift();
+                }
+                drag.set_over(column);
+                drag.set_slot(Some((column, Some(key.clone()))));
             }
             app.hovered = Some(key);
         }
@@ -502,19 +573,21 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             if app.hovered.as_ref() == Some(&key) {
                 app.hovered = None;
             }
-            if let Some(drag) = &mut app.drag
-                && drag.before.as_ref() == Some(&key)
-            {
-                drag.before = None;
-            }
         }
         Message::EnterColumn(col) => {
             if let Some(drag) = &mut app.drag
                 && drag.over != Some(col)
             {
-                drag.over = Some(col);
-                drag.before = None;
-                drag.moved = true;
+                drag.set_over(col);
+                drag.lift();
+                if drag.slot.as_ref().map(|slot| slot.0) != Some(col) {
+                    drag.set_slot(Some((col, None)));
+                }
+            }
+        }
+        Message::EnterTail(col) => {
+            if let Some(drag) = &mut app.drag {
+                drag.set_slot(Some((col, None)));
             }
         }
         Message::DropOn(col) => {
@@ -527,19 +600,29 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 }
                 return request_leave(app, Leave::Open(drag.key));
             }
+            let before = match drag.slot {
+                Some((slot_col, before)) if slot_col == col => before,
+                _ => None,
+            };
             let cards: Vec<&CardSummary> = app.board.iter().filter(|c| c.column == col).collect();
-            let index = drop_index(&cards, &drag.key, drag.before.as_deref());
-            let current = cards.iter().position(|c| c.key == drag.key);
-            let others = cards.len() - usize::from(current.is_some());
-            if col != drag.from {
-                let mut result = app.store.card_move(&drag.key, &manager(), col);
-                if result.is_ok() && index < others {
-                    result = app.store.card_reorder(&drag.key, &manager(), index as i64);
-                }
-                app.after_write(result);
-            } else if current != Some(index) {
-                let result = app.store.card_reorder(&drag.key, &manager(), index as i64);
-                app.after_write(result);
+            let index = drop_index(&cards, &drag.key, before.as_deref());
+            if cards.iter().position(|c| c.key == drag.key) == Some(index) {
+                return Task::none();
+            }
+            let result = app
+                .store
+                .card_place(&drag.key, &manager(), col, index as i64);
+            let placed = result.is_ok();
+            app.after_write(result);
+            if placed {
+                let now = Instant::now();
+                app.appeared.insert(drag.key.clone(), now);
+                app.landed = Some((drag.key, now));
+            }
+        }
+        Message::DragMove(position) => {
+            if let Some(drag) = &mut app.drag {
+                drag.cursor = position;
             }
         }
         Message::CancelDrag => app.drag = None,
@@ -739,6 +822,12 @@ fn subscription(state: &State) -> Subscription<Message> {
                         _ => None,
                     }
                 }));
+                subs.push(iced::event::listen_with(|event, _, _| match event {
+                    iced::Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                        Some(Message::DragMove(position))
+                    }
+                    _ => None,
+                }));
             }
             Subscription::batch(subs)
         }
@@ -918,7 +1007,7 @@ impl App {
         .height(Length::Fill);
         let body =
             row![self.view_sidebar(), rule::vertical(1), self.view_main()].height(Length::Fill);
-        stack![
+        let layers = stack![
             backdrop,
             column![
                 titlebar::view(self),
@@ -926,8 +1015,31 @@ impl App {
                 rule::horizontal(1),
                 self.view_footer()
             ]
-        ]
-        .into()
+        ];
+        match self.view_ghost() {
+            Some(ghost) => layers.push(ghost).into(),
+            None => layers.into(),
+        }
+    }
+
+    fn view_ghost(&self) -> Option<Element<'_, Message>> {
+        let drag = self.drag.as_ref().filter(|d| d.moved)?;
+        let card = self.board.iter().find(|c| c.key == drag.key)?;
+        let lift = drag
+            .lifted
+            .map_or(1.0, |at| at.elapsed().as_secs_f32() / LIFT_SECS);
+        let ghost = container(card_face(
+            card,
+            theme::PRIMARY,
+            self.runs.get(&card.key).is_some_and(Run::is_running),
+        ))
+        .width(GHOST_WIDTH)
+        .style(theme::ghost);
+        Some(
+            pin(float(ghost).scale(1.0 + 0.04 * ease_out(lift)))
+                .position(drag.cursor - GHOST_OFFSET)
+                .into(),
+        )
     }
 
     fn view_sidebar(&self) -> Element<'_, Message> {
@@ -1064,7 +1176,7 @@ impl App {
             Column::Done => (theme::SUCCESS, theme::SUCCESS),
             _ => (theme::TEXT, theme::PRIMARY),
         };
-        let grow = 1.0 - (1.0 - self.reloaded.elapsed().as_secs_f32().min(1.0)).powi(3);
+        let grow = ease_out(self.reloaded.elapsed().as_secs_f32());
         let fill = (in_column.len() as f32).min(theme::COLUMN_CAP) / theme::COLUMN_CAP * grow;
         let header = row![
             text(col.as_str().to_uppercase()).size(11).color(name_color),
@@ -1080,44 +1192,68 @@ impl App {
         let open = self.detail.as_ref().map(|d| d.key.as_str());
         let moving = self.drag.as_ref().filter(|d| d.moved);
         let target = moving.filter(|d| d.over == Some(col));
-        let list = scrollable(column(cards.into_iter().map(|card| {
+        let list = column(cards.into_iter().map(|card| {
             let flash = self
                 .appeared
                 .get(&card.key)
                 .map(|at| at.elapsed().as_secs_f32() / FLASH_SECS)
                 .filter(|age| *age < 1.0);
-            card_box(
+            let dragged = moving.is_some_and(|d| d.key == card.key);
+            let gap = moving
+                .filter(|d| d.key != card.key)
+                .map_or(0.0, |d| d.gap(col, Some(&card.key)));
+            let boxed = card_box(
                 card,
                 open == Some(card.key.as_str()),
                 self.hovered.as_deref() == Some(card.key.as_str()),
                 flash,
                 moving.is_some(),
-                moving.is_some_and(|d| d.key == card.key),
+                dragged,
                 self.runs.get(&card.key).is_some_and(Run::is_running),
-                target.is_some_and(|d| {
-                    d.key != card.key && d.before.as_deref() == Some(card.key.as_str())
-                }),
-            )
-        })))
-        .direction(theme::thin())
-        .style(theme::scrollbar);
+                gap,
+            );
+            match &self.landed {
+                Some((key, at)) if *key == card.key => {
+                    let settle = 1.0 - ease_out(at.elapsed().as_secs_f32() / LAND_SECS);
+                    float(boxed).scale(1.0 + 0.05 * settle).into()
+                }
+                _ => boxed,
+            }
+        }));
+        let tail_gap = moving.map_or(0.0, |d| d.gap(col, None));
+        let mut tail = column![];
+        if tail_gap > 0.0 {
+            tail = tail.push(gap_box(tail_gap));
+        }
+        let tail = mouse_area(container(tail).width(Length::Fill).height(DROP_GAP))
+            .on_enter(Message::EnterTail(col));
+        let list = scrollable(list.push(tail))
+            .direction(theme::thin())
+            .style(theme::scrollbar);
         let panel = container(column![header, rule::horizontal(1), list].spacing(10))
             .padding(10)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(theme::glass);
-        let brackets = match col {
-            _ if target.is_some() => fx::Brackets {
+            .style(if target.is_some() {
+                theme::glass_lit
+            } else {
+                theme::glass
+            });
+        let brackets = match (col, target) {
+            (_, Some(drag)) => fx::Brackets {
                 color: theme::ACCENT,
-                alpha: 1.0,
+                alpha: 0.75 + 0.25 * (self.t * 2.0 * PI).sin(),
+                len: fx::BRACKET + 8.0 * ease_out(drag.over_at.elapsed().as_secs_f32() / GAP_SECS),
             },
-            Column::Doing => fx::Brackets {
+            (Column::Doing, None) => fx::Brackets {
                 color: theme::PRIMARY,
                 alpha: 0.7 + 0.3 * (self.t * PI).sin(),
+                len: fx::BRACKET,
             },
             _ => fx::Brackets {
                 color: theme::BORDER_STRONG,
                 alpha: 1.0,
+                len: fx::BRACKET,
             },
         };
         let area = mouse_area(
@@ -1200,18 +1336,21 @@ fn view_import(import: &Result<ImportReport, String>) -> Element<'_, Message> {
 }
 
 const FLASH_SECS: f32 = 0.6;
+/// px
+const DROP_GAP: f32 = 44.0;
+const GAP_SECS: f32 = 0.15;
+const LIFT_SECS: f32 = 0.12;
+const LAND_SECS: f32 = 0.25;
+/// px
+const GHOST_WIDTH: f32 = 260.0;
+/// Cursor position inside the ghost, px.
+const GHOST_OFFSET: Vector = Vector::new(24.0, 14.0);
 
-#[allow(clippy::too_many_arguments)]
-fn card_box(
-    card: &CardSummary,
-    selected: bool,
-    hovered: bool,
-    flash: Option<f32>,
-    dragging: bool,
-    dragged: bool,
-    running: bool,
-    drop_before: bool,
-) -> Element<'_, Message> {
+fn ease_out(x: f32) -> f32 {
+    1.0 - (1.0 - x.clamp(0.0, 1.0)).powi(3)
+}
+
+fn card_face(card: &CardSummary, bar: Color, running: bool) -> Element<'_, Message> {
     let mut top = row![text(&card.key).color(theme::TEXT_MUTED)];
     if let Some(tier) = &card.tier {
         top = top
@@ -1228,8 +1367,38 @@ fn card_box(
     } else if running {
         body = body.push(text("▶ truck").size(11).color(theme::ACCENT));
     }
+    row![
+        container(space())
+            .width(2)
+            .height(Length::Fill)
+            .style(theme::fill(bar)),
+        container(body).padding(8).width(Length::Fill),
+    ]
+    .height(Length::Shrink)
+    .into()
+}
+
+fn gap_box<'a>(height: f32) -> Element<'a, Message> {
+    container(space())
+        .width(Length::Fill)
+        .height(height)
+        .style(theme::drop_slot)
+        .into()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn card_box(
+    card: &CardSummary,
+    selected: bool,
+    hovered: bool,
+    flash: Option<f32>,
+    dragging: bool,
+    dragged: bool,
+    running: bool,
+    gap: f32,
+) -> Element<'_, Message> {
     let bar = if dragged {
-        theme::PRIMARY
+        theme::BORDER
     } else if selected {
         theme::ACCENT
     } else if card.human {
@@ -1241,38 +1410,24 @@ fn card_box(
     } else {
         theme::BORDER_STRONG
     };
-    let border = if dragged {
-        theme::PRIMARY
-    } else if selected {
+    let border = if selected {
         theme::ACCENT
     } else if card.human {
         theme::WARNING
     } else {
         theme::BORDER
     };
-    let content = row![
-        container(space())
-            .width(2)
-            .height(Length::Fill)
-            .style(theme::fill(bar)),
-        container(body).padding(8).width(Length::Fill),
-    ]
-    .height(Length::Shrink);
+    let face = container(card_face(card, bar, running)).width(Length::Fill);
+    let face = if dragged {
+        face.style(theme::placeholder)
+    } else {
+        face.style(theme::card(border))
+    };
     let mut boxed = column![];
-    if drop_before {
-        boxed = boxed.push(
-            container(space())
-                .width(Length::Fill)
-                .height(2)
-                .style(theme::fill(theme::ACCENT)),
-        );
+    if gap > 0.0 {
+        boxed = boxed.push(gap_box(gap));
     }
-    let boxed = boxed.push(
-        container(content)
-            .width(Length::Fill)
-            .style(theme::card(border)),
-    );
-    mouse_area(container(boxed).padding(Padding::ZERO.bottom(6)))
+    mouse_area(container(boxed.push(face)).padding(Padding::ZERO.bottom(6)))
         .on_press(Message::Press(card.key.clone()))
         .on_enter(Message::EnterCard(card.key.clone()))
         .on_exit(Message::ExitCard(card.key.clone()))

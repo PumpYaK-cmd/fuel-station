@@ -1,6 +1,6 @@
 # drag-fx: drag-and-drop animations + one-write move (cards 716b6692, c45a5901)
 
-base: (set at claim)
+base: 9ddc7da39f95f247a790ea1b8edb13174e4d274a
 
 ## Context
 Drag today (`src/ui/mod.rs`: `Drag`, `Message::Press/EnterCard/ExitCard/EnterColumn/DropOn/

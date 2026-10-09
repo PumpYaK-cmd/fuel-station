@@ -414,25 +414,7 @@ impl Store {
     pub fn card_reorder(&mut self, card_key: &str, actor: &Actor, position: i64) -> Result<Card> {
         self.write(|tx| {
             let (project_id, card) = find_card(tx, card_key)?;
-            let mut ids = tx
-                .prepare(
-                    "SELECT id FROM cards WHERE project_id = ?1 AND col = ?2 AND id != ?3 \
-                     ORDER BY position, id",
-                )?
-                .query_map(params![project_id, card.column, card.id], |r| r.get(0))?
-                .collect::<rusqlite::Result<Vec<i64>>>()?;
-            let at = position.clamp(0, ids.len() as i64) as usize;
-            ids.insert(at, card.id);
-            for (i, id) in ids.iter().enumerate() {
-                tx.execute(
-                    "UPDATE cards SET position = ?2 WHERE id = ?1",
-                    params![id, i as i64],
-                )?;
-            }
-            tx.execute(
-                "UPDATE cards SET updated_at = ?2 WHERE id = ?1",
-                params![card.id, now()],
-            )?;
+            let at = reorder(tx, project_id, card.id, card.column, position)?;
             event(
                 tx,
                 project_id,
@@ -445,6 +427,40 @@ impl Store {
                     card.column.as_str()
                 ),
             )?;
+            card_by_id(tx, card.id)
+        })
+    }
+
+    pub fn card_place(
+        &mut self,
+        card_key: &str,
+        actor: &Actor,
+        column: Column,
+        position: i64,
+    ) -> Result<Card> {
+        self.write(|tx| {
+            let (project_id, card) = find_card(tx, card_key)?;
+            if column != card.column {
+                move_to(tx, project_id, card.id, column)?;
+            }
+            let at = reorder(tx, project_id, card.id, column, position)?;
+            let (kind, message) = if column != card.column {
+                (
+                    "card_move",
+                    format!(
+                        "Moved {} {} -> {}",
+                        card.key,
+                        card.column.as_str(),
+                        column.as_str()
+                    ),
+                )
+            } else {
+                (
+                    "card_reorder",
+                    format!("Moved {} to position {at} in {}", card.key, column.as_str()),
+                )
+            };
+            event(tx, project_id, Some(card.id), actor, kind, &message)?;
             card_by_id(tx, card.id)
         })
     }
@@ -877,6 +893,35 @@ fn move_to(conn: &Connection, project_id: i64, card_id: i64, column: Column) -> 
         params![card_id, column, position, now()],
     )?;
     Ok(())
+}
+
+fn reorder(
+    conn: &Connection,
+    project_id: i64,
+    card_id: i64,
+    column: Column,
+    position: i64,
+) -> Result<usize> {
+    let mut ids = conn
+        .prepare(
+            "SELECT id FROM cards WHERE project_id = ?1 AND col = ?2 AND id != ?3 \
+             ORDER BY position, id",
+        )?
+        .query_map(params![project_id, column, card_id], |r| r.get(0))?
+        .collect::<rusqlite::Result<Vec<i64>>>()?;
+    let at = position.clamp(0, ids.len() as i64) as usize;
+    ids.insert(at, card_id);
+    for (i, id) in ids.iter().enumerate() {
+        conn.execute(
+            "UPDATE cards SET position = ?2 WHERE id = ?1",
+            params![id, i as i64],
+        )?;
+    }
+    conn.execute(
+        "UPDATE cards SET updated_at = ?2 WHERE id = ?1",
+        params![card_id, now()],
+    )?;
+    Ok(at)
 }
 
 fn insert_comment(conn: &Connection, card: &Card, actor: &Actor, body: &str) -> Result<Comment> {

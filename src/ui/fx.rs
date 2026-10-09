@@ -7,7 +7,7 @@ const CELL: f32 = 40.0;
 const SWEEP_HEIGHT: f32 = 200.0;
 /// Seconds for one sweep to cross the window.
 const SWEEP_PERIOD: f32 = 9.0;
-const BRACKET: f32 = 12.0;
+pub const BRACKET: f32 = 12.0;
 
 pub struct Backdrop<'a> {
     pub t: f32,
@@ -78,6 +78,7 @@ fn draw_grid(frame: &mut Frame, size: Size) {
 pub struct Brackets {
     pub color: Color,
     pub alpha: f32,
+    pub len: f32,
 }
 
 impl<Message> canvas::Program<Message> for Brackets {
@@ -101,9 +102,9 @@ impl<Message> canvas::Program<Message> for Brackets {
         ];
         let path = Path::new(|p| {
             for (corner, dx, dy) in corners {
-                p.move_to(Point::new(corner.x + dx * BRACKET, corner.y));
+                p.move_to(Point::new(corner.x + dx * self.len, corner.y));
                 p.line_to(corner);
-                p.line_to(Point::new(corner.x, corner.y + dy * BRACKET));
+                p.line_to(Point::new(corner.x, corner.y + dy * self.len));
             }
         });
         frame.stroke(

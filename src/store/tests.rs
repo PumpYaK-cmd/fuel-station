@@ -190,6 +190,72 @@ fn reorder_renumbers_column() {
     assert_eq!(order, [("FS-4", 0), ("FS-2", 1), ("FS-3", 2), ("FS-1", 3)]);
 }
 
+fn order(store: &Store, column: Column) -> Vec<String> {
+    store
+        .board("FS", Some(column))
+        .unwrap()
+        .into_iter()
+        .map(|c| c.key)
+        .collect()
+}
+
+#[test]
+fn place_across_columns_is_one_move_event() {
+    let (_dir, mut store) = temp();
+    with_project(&mut store);
+    add(&mut store, Column::Doing, "a");
+    add(&mut store, Column::Doing, "b");
+    add(&mut store, Column::Ready, "c");
+    let before = event_count(&store);
+    let placed = store
+        .card_place("FS-3", &truck(), Column::Doing, 0)
+        .unwrap();
+    assert_eq!((placed.column, placed.position), (Column::Doing, 0));
+    assert_eq!(order(&store, Column::Doing), ["FS-3", "FS-1", "FS-2"]);
+    assert_eq!(event_count(&store), before + 1);
+    let event = &store.events("FS", 1).unwrap()[0];
+    assert_eq!(event.kind, "card_move");
+    assert_eq!(event.message, "Moved FS-3 Ready -> Doing");
+}
+
+#[test]
+fn place_in_same_column_matches_reorder() {
+    let (_dir, mut placed) = temp();
+    let (_dir2, mut reordered) = temp();
+    for store in [&mut placed, &mut reordered] {
+        with_project(store);
+        for title in ["a", "b", "c"] {
+            add(store, Column::Ready, title);
+        }
+    }
+    placed
+        .card_place("FS-3", &truck(), Column::Ready, 1)
+        .unwrap();
+    reordered.card_reorder("FS-3", &truck(), 1).unwrap();
+    assert_eq!(
+        order(&placed, Column::Ready),
+        order(&reordered, Column::Ready)
+    );
+    let (a, b) = (
+        &placed.events("FS", 1).unwrap()[0],
+        &reordered.events("FS", 1).unwrap()[0],
+    );
+    assert_eq!((&a.kind, &a.message), (&b.kind, &b.message));
+}
+
+#[test]
+fn place_past_end_clamps() {
+    let (_dir, mut store) = temp();
+    with_project(&mut store);
+    add(&mut store, Column::Doing, "a");
+    add(&mut store, Column::Ready, "b");
+    let placed = store
+        .card_place("FS-2", &truck(), Column::Doing, 99)
+        .unwrap();
+    assert_eq!(placed.position, 1);
+    assert_eq!(order(&store, Column::Doing), ["FS-1", "FS-2"]);
+}
+
 #[test]
 fn card_update_patches_fields() {
     let (_dir, mut store) = temp();

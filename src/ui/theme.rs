@@ -1,6 +1,6 @@
 use iced::theme::Palette;
 use iced::widget::{self, container, pick_list, progress_bar, scrollable, text_editor, text_input};
-use iced::{Border, Color, Font, Theme, color};
+use iced::{Border, Color, Font, Shadow, Theme, Vector, color};
 
 pub const BACKGROUND: Color = color!(0x0A0E14);
 pub const SURFACE: Color = color!(0x0F1520);
@@ -16,6 +16,10 @@ pub const WARNING: Color = color!(0xF0B44C);
 pub const DANGER: Color = color!(0xFF5C6C);
 
 pub const SURFACE_GLASS: Color = Color { a: 0.93, ..SURFACE };
+pub const SURFACE_GLASS_LIT: Color = Color {
+    a: 0.93,
+    ..color!(0x15202D)
+};
 pub const SIDEBAR_GLASS: Color = Color { a: 0.80, ..SURFACE };
 pub const BAR_GRID: Color = Color {
     a: 0.5,
@@ -72,6 +76,13 @@ pub fn glass(_theme: &Theme) -> container::Style {
         })
 }
 
+pub fn glass_lit(theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(SURFACE_GLASS_LIT.into()),
+        ..glass(theme)
+    }
+}
+
 pub fn sidebar(_theme: &Theme) -> container::Style {
     container::Style::default().background(SIDEBAR_GLASS)
 }
@@ -90,6 +101,32 @@ pub fn card(border: Color) -> impl Fn(&Theme) -> container::Style {
                 radius: 2.0.into(),
             })
     }
+}
+
+pub fn placeholder(theme: &Theme) -> container::Style {
+    card(PRIMARY.scale_alpha(0.4))(theme).color(TEXT_MUTED)
+}
+
+pub fn ghost(theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(BACKGROUND.scale_alpha(0.92).into()),
+        shadow: Shadow {
+            color: Color::BLACK.scale_alpha(0.5),
+            offset: Vector::new(0.0, 6.0),
+            blur_radius: 18.0,
+        },
+        ..card(PRIMARY)(theme)
+    }
+}
+
+pub fn drop_slot(_theme: &Theme) -> container::Style {
+    container::Style::default()
+        .background(ACCENT.scale_alpha(0.08))
+        .border(Border {
+            color: ACCENT.scale_alpha(0.6),
+            width: 1.0,
+            radius: 2.0.into(),
+        })
 }
 
 pub fn fill(color: Color) -> impl Fn(&Theme) -> container::Style {
