@@ -1,6 +1,6 @@
 # GUI shell: sidebar, board columns, live refresh (card 7f379315)
 
-base: <filled by agent>
+base: 7307b4ec6c3656cc008e688cac02bb884d2672f6
 
 ## Context
 design.md > UI (layout sketch, Sidebar, Board, Footer, Style rules). Spike landed

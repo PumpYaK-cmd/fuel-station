@@ -6,6 +6,7 @@ pub const BACKGROUND: Color = color!(0x0A0E14);
 pub const SURFACE: Color = color!(0x0F1520);
 pub const SURFACE_HOVER: Color = color!(0x151D2B);
 pub const BORDER: Color = color!(0x1C2636);
+#[allow(dead_code)]
 pub const BORDER_STRONG: Color = color!(0x2A3A52);
 pub const TEXT: Color = color!(0xC8D3E6);
 pub const TEXT_MUTED: Color = color!(0x5E6E88);
