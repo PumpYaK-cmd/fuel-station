@@ -332,7 +332,7 @@ impl Store {
             let (project_id, card) = find_card(tx, card_key)?;
             tx.execute(
                 "UPDATE cards SET title = COALESCE(?2, title), body = COALESCE(?3, body), \
-                 plan = COALESCE(?4, plan), tier = COALESCE(?5, tier), \
+                 plan = COALESCE(?4, plan), tier = NULLIF(COALESCE(?5, tier), ''), \
                  human = COALESCE(?6, human), updated_at = ?7 WHERE id = ?1",
                 params![
                     card.id,

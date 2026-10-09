@@ -183,6 +183,26 @@ fn card_update_patches_fields() {
 }
 
 #[test]
+fn card_update_empty_tier_clears_it() {
+    let (_dir, mut store) = temp();
+    with_project(&mut store);
+    add(&mut store, Column::Ready, "a");
+    let patch = |tier: Option<&str>| CardPatch {
+        tier: tier.map(str::to_string),
+        ..Default::default()
+    };
+    store
+        .card_update("FS-1", &truck(), &patch(Some("2")))
+        .unwrap();
+    let card = store.card_update("FS-1", &truck(), &patch(None)).unwrap();
+    assert_eq!(card.tier.as_deref(), Some("2"));
+    let card = store
+        .card_update("FS-1", &truck(), &patch(Some("")))
+        .unwrap();
+    assert_eq!(card.tier, None);
+}
+
+#[test]
 fn grab_takes_top_non_human() {
     let (_dir, mut store) = temp();
     with_project(&mut store);

@@ -1,40 +1,42 @@
+mod tools;
+
+use std::sync::{Arc, Mutex};
+
 use rmcp::{
     ServerHandler, ServiceExt,
     handler::server::router::{prompt::PromptRouter, tool::ToolRouter},
     model::{Implementation, PromptMessage, Role, ServerCapabilities, ServerConfig},
-    prompt, prompt_handler, prompt_router, tool, tool_handler, tool_router,
+    prompt, prompt_handler, prompt_router, tool_handler,
 };
+
+use crate::store::Store;
 
 #[derive(Clone)]
 struct Station {
     project: String,
+    store: Arc<Mutex<Store>>,
     tool_router: ToolRouter<Self>,
     prompt_router: PromptRouter<Self>,
 }
 
-#[tool_router]
 impl Station {
-    fn new(project: &str) -> Self {
+    fn new(project: &str, store: Store) -> Self {
         Self {
             project: project.to_string(),
+            store: Arc::new(Mutex::new(store)),
             tool_router: Self::tool_router(),
             prompt_router: Self::prompt_router(),
         }
-    }
-
-    #[tool(description = "Check that the station MCP server is reachable.")]
-    async fn ping(&self) -> String {
-        format!("pong from station (project {})", self.project)
     }
 }
 
 #[prompt_router]
 impl Station {
-    #[prompt(description = "Call the station ping tool and report the result.")]
+    #[prompt(description = "Call the station project_info tool and report the result.")]
     async fn hello(&self) -> Vec<PromptMessage> {
         vec![PromptMessage::new_text(
             Role::User,
-            "Call the station ping tool and report what it returned.",
+            "Call the station project_info tool and report what it returned.",
         )]
     }
 }
@@ -54,12 +56,22 @@ impl ServerHandler for Station {
 }
 
 pub fn run(project: &str) {
+    let store = match Store::open_default() {
+        Ok(store) => store,
+        Err(e) => {
+            eprintln!("station: cannot open store: {e}");
+            std::process::exit(1);
+        }
+    };
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("tokio runtime");
     runtime.block_on(async {
-        let service = match Station::new(project).serve(rmcp::transport::stdio()).await {
+        let service = match Station::new(project, store)
+            .serve(rmcp::transport::stdio())
+            .await
+        {
             Ok(service) => service,
             Err(e) => {
                 eprintln!("station: initialize failed: {e}");

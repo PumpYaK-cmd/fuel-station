@@ -1,6 +1,6 @@
 # MCP tools over store (card 349abc13)
 
-base: <filled by agent>
+base: 7307b4ec6c3656cc008e688cac02bb884d2672f6
 
 ## Context
 design.md > MCP server (tool table). Spike landed `src/mcp/mod.rs` (rmcp 3.5 stdio server,
