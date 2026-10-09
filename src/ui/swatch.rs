@@ -50,7 +50,17 @@ pub fn view(_state: &()) -> Element<'_, Message> {
     .padding(10)
     .style(theme::panel);
 
-    let right = column![buttons, rule::horizontal(1), panel].spacing(20);
+    let cards = row![
+        container(text("card"))
+            .padding(10)
+            .style(theme::card_box(false)),
+        container(text("warning card"))
+            .padding(10)
+            .style(theme::card_box(true)),
+    ]
+    .spacing(10);
+
+    let right = column![buttons, rule::horizontal(1), panel, cards].spacing(20);
 
     container(row![tokens, rule::vertical(1), right].spacing(20))
         .padding(20)

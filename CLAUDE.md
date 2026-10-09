@@ -8,6 +8,7 @@ trello CLI workflow. Spec: `docs/design.md`; read the section a card points at b
 - Only `store` writes SQL. UI and MCP call `store` functions.
 - Never point `.mcp.json` at `target/`: running MCP servers lock the exe (see design.md, Windows exe lock).
 - UI colors come from `ui::theme` tokens, never inline hex.
+- iced 0.14 rules: `rule::horizontal(1)` / `rule::vertical(1)`; the arg is drawn thickness, so design.md's `horizontal_rule(0)` draws nothing.
 
 ## Board & gate
 - Board: `trello --backend local --board fuel-station` · lists Backlog / Ready / Doing / Done · `[HUMAN]` cards need the user's hands: don't grab them.

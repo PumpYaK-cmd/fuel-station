@@ -57,7 +57,6 @@ pub fn panel(_theme: &Theme) -> container::Style {
         })
 }
 
-#[allow(dead_code)]
 pub fn card_box(warning: bool) -> impl Fn(&Theme) -> container::Style {
     move |theme| {
         let style = panel(theme);
