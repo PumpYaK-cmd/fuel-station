@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::Path;
+use std::sync::Barrier;
 use std::thread;
 
 use tempfile::TempDir;
@@ -51,6 +51,12 @@ fn migrations_are_idempotent_on_reopen() {
         .unwrap();
     assert_eq!(version, schema::MIGRATIONS.len() as i64);
     assert_eq!(store.projects().unwrap().len(), 1);
+    store
+        .conn
+        .pragma_update(None, "user_version", 99_i64)
+        .unwrap();
+    drop(store);
+    assert!(matches!(Store::open(&path), Err(StoreError::Invalid(_))));
 }
 
 #[test]
@@ -79,6 +85,14 @@ fn project_key_is_uppercased_and_validated() {
         .unwrap();
     assert_eq!(updated.name, "Renamed");
     assert_eq!(updated.ship_mode, ShipMode::Studio);
+    let rekey = store.project_update(
+        "FS",
+        &NewProject {
+            key: "XX".to_string(),
+            ..Default::default()
+        },
+    );
+    assert!(matches!(rekey, Err(StoreError::Invalid(_))));
     assert!(matches!(
         store.project("NOPE"),
         Err(StoreError::NotFound(_))
@@ -195,6 +209,19 @@ fn grab_takes_top_non_human() {
     assert_eq!(store.card("FS-1").unwrap().column, Column::Ready);
 }
 
+fn race(mut store: Store, barrier: &Barrier, name: &str) -> Vec<String> {
+    let actor = Actor {
+        role: Role::Fuel,
+        name: name.to_string(),
+    };
+    barrier.wait();
+    let mut keys = Vec::new();
+    while let Some(card) = store.grab("FS", &actor, Column::Ready).unwrap() {
+        keys.push(card.key);
+    }
+    keys
+}
+
 #[test]
 fn racing_grabs_take_each_card_once() {
     let dir = tempfile::tempdir().unwrap();
@@ -204,21 +231,12 @@ fn racing_grabs_take_each_card_once() {
     for i in 0..20 {
         add(&mut store, Column::Ready, &format!("card {i}"));
     }
-    let racer = |path: &Path, name: &str| {
-        let mut store = Store::open(path).unwrap();
-        let actor = Actor {
-            role: Role::Fuel,
-            name: name.to_string(),
-        };
-        let mut keys = Vec::new();
-        while let Some(card) = store.grab("FS", &actor, Column::Ready).unwrap() {
-            keys.push(card.key);
-        }
-        keys
-    };
+    let a = Store::open(&path).unwrap();
+    let b = Store::open(&path).unwrap();
+    let barrier = Barrier::new(2);
     let (a, b) = thread::scope(|s| {
-        let a = s.spawn(|| racer(&path, "a"));
-        let b = s.spawn(|| racer(&path, "b"));
+        let a = s.spawn(|| race(a, &barrier, "a"));
+        let b = s.spawn(|| race(b, &barrier, "b"));
         (a.join().unwrap(), b.join().unwrap())
     });
     let all: HashSet<String> = a.iter().chain(&b).cloned().collect();

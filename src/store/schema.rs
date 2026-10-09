@@ -1,5 +1,7 @@
 use rusqlite::{Connection, TransactionBehavior};
 
+use super::{Result, StoreError};
+
 pub const MIGRATIONS: &[&str] = &["
 CREATE TABLE projects (
     id INTEGER PRIMARY KEY,
@@ -65,15 +67,22 @@ CREATE TABLE agents (
 );
 "];
 
-pub fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
+pub fn migrate(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let version: i64 = tx.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     let version = version as usize;
+    if version > MIGRATIONS.len() {
+        return Err(StoreError::Invalid(format!(
+            "database schema v{version} is newer than this build (v{})",
+            MIGRATIONS.len()
+        )));
+    }
     if version < MIGRATIONS.len() {
         for sql in &MIGRATIONS[version..] {
             tx.execute_batch(sql)?;
         }
         tx.pragma_update(None, "user_version", MIGRATIONS.len() as i64)?;
     }
-    tx.commit()
+    tx.commit()?;
+    Ok(())
 }

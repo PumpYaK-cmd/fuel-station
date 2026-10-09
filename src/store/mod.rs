@@ -83,7 +83,13 @@ impl Store {
         }
         let mut conn = Connection::open(path)?;
         conn.busy_timeout(Duration::from_millis(5000))?;
-        conn.pragma_update_and_check(None, "journal_mode", "WAL", |r| r.get::<_, String>(0))?;
+        let mode =
+            conn.pragma_update_and_check(None, "journal_mode", "WAL", |r| r.get::<_, String>(0))?;
+        if !mode.eq_ignore_ascii_case("wal") {
+            return Err(StoreError::Invalid(format!(
+                "journal_mode is {mode}, WAL required"
+            )));
+        }
         conn.pragma_update(None, "foreign_keys", "ON")?;
         schema::migrate(&mut conn)?;
         Ok(Store { conn })
@@ -176,6 +182,12 @@ impl Store {
     pub fn project_update(&mut self, key: &str, new: &NewProject) -> Result<Project> {
         self.write(|tx| {
             let project = find_project(tx, key)?;
+            if !new.key.is_empty() && !new.key.eq_ignore_ascii_case(&project.key) {
+                return Err(StoreError::Invalid(format!(
+                    "project key {} cannot change to {:?}",
+                    project.key, new.key
+                )));
+            }
             tx.execute(
                 "UPDATE projects SET name = ?2, path = ?3, ship_mode = ?4, default_branch = ?5, \
                  verify_cmd = ?6, worktree_dir = ?7, bootstrap_cmd = ?8, ship_cmd = ?9 \
