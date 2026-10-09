@@ -39,6 +39,7 @@ struct App {
     board: Vec<CardSummary>,
     data_version: i64,
     error: Option<String>,
+    read_failed: bool,
     theme: Theme,
     themes: Vec<Theme>,
     detail: Option<Detail>,
@@ -74,6 +75,7 @@ fn boot() -> State {
         board: Vec::new(),
         data_version: 0,
         error: None,
+        read_failed: false,
         theme: theme::theme(),
         themes: std::iter::once(theme::theme())
             .chain(Theme::ALL.iter().cloned())
@@ -102,8 +104,8 @@ fn update(state: &mut State, message: Message) {
                 Ok(version) if version != app.data_version || app.ticks % 17 == 0 => {
                     app.reload(app.selected.clone())
                 }
-                Ok(_) => app.error = None,
-                Err(e) => app.error = Some(e.to_string()),
+                Ok(_) => app.clear_read_error(),
+                Err(e) => app.read_error(e),
             }
         }
         Message::ThemeChanged(theme) => app.theme = theme,
@@ -228,7 +230,19 @@ fn app_theme(state: &State) -> Theme {
 impl App {
     fn reload(&mut self, selected: Option<String>) {
         if let Err(e) = self.try_reload(selected) {
-            self.error = Some(e.to_string());
+            self.read_error(e);
+        }
+    }
+
+    fn read_error(&mut self, e: StoreError) {
+        self.error = Some(e.to_string());
+        self.read_failed = true;
+    }
+
+    fn clear_read_error(&mut self) {
+        if self.read_failed {
+            self.error = None;
+            self.read_failed = false;
         }
     }
 
@@ -273,7 +287,7 @@ impl App {
             _ => self.detail = None,
         }
         self.data_version = version;
-        self.error = None;
+        self.clear_read_error();
         Ok(())
     }
 
