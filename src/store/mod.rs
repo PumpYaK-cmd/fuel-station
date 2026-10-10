@@ -66,7 +66,7 @@ pub fn db_path() -> PathBuf {
     // to a private copy, so the GUI and the mcp server would open different databases.
     let home = std::env::var_os("USERPROFILE")
         .map(PathBuf::from)
-        .unwrap_or_default();
+        .expect("USERPROFILE is not set");
     home.join(".fuel-station").join("station.db")
 }
 
