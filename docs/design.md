@@ -223,6 +223,8 @@ dark blue palette, dressed as a space docking bay. Reference mockup:
   amber, Done green) that fills in over 1 s on project switch. Cards are opaque boxes with a
   2 px left bar: `accent` when open, `warning` for `[HUMAN]`, flashes `accent` when a card
   first appears, `primary` on hover, else `border_strong`.
+- **New card**: `+` in a column header opens a title input under it; Enter adds the card to
+  that column as `manager` and opens it, Escape or an empty title cancels.
 - **Card detail**: side panel on click: title, body, plan (iced `markdown` widget),
   comments, events, move buttons, edit fields.
 - **Activity**: live event feed for the project, newest first; a blinking `LIVE` tag.

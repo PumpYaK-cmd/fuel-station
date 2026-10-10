@@ -126,6 +126,7 @@ struct App {
     runs: HashMap<String, Run>,
     next_run: u64,
     landed: Option<(String, Instant)>,
+    new_card: Option<(Column, String)>,
 }
 
 type Slot = (Column, Option<String>);
@@ -201,6 +202,7 @@ impl Drag {
 }
 
 const SEARCH_ID: &str = "search";
+const NEW_CARD_ID: &str = "new-card";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Filter {
@@ -283,6 +285,10 @@ enum Message {
     Launch,
     StopRun,
     RunEvent(String, u64, RunEvent),
+    NewCard(Column),
+    NewCardEdited(String),
+    CreateCard,
+    CancelNewCard,
 }
 
 fn boot() -> (State, Task<Message>) {
@@ -343,6 +349,7 @@ fn open() -> State {
         runs: HashMap::new(),
         next_run: 0,
         landed: None,
+        new_card: None,
     };
     app.reload(None);
     match app.store.last_event_id() {
@@ -459,6 +466,33 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             app.after_write(result);
         }
+        Message::NewCard(column) => {
+            app.new_card = Some((column, String::new()));
+            return operation::focus(NEW_CARD_ID);
+        }
+        Message::NewCardEdited(title) => {
+            if let Some((_, draft)) = &mut app.new_card {
+                *draft = title;
+            }
+        }
+        Message::CreateCard => {
+            let (Some((column, title)), Some(project)) = (&app.new_card, &app.selected) else {
+                return Task::none();
+            };
+            let title = title.trim();
+            if title.is_empty() {
+                app.new_card = None;
+                return Task::none();
+            }
+            let result = app.store.card_add(project, &manager(), *column, title, "");
+            let key = result.as_ref().ok().map(|card| card.key.clone());
+            app.after_write(result);
+            if let Some(key) = key {
+                app.new_card = None;
+                return request_leave(app, Leave::Open(key));
+            }
+        }
+        Message::CancelNewCard => app.new_card = None,
         Message::MoveTo(column) => {
             if let Some(d) = &app.detail {
                 let result = app.store.card_move(&d.key, &manager(), column);
@@ -844,7 +878,16 @@ fn subscription(state: &State) -> Subscription<Message> {
                 _ => None,
             });
             let mut subs = vec![tick, frames, focus, find];
-            if app.detail.is_some() {
+            if app.new_card.is_some() {
+                subs.push(iced::event::listen_with(|event, _, _| match event {
+                    iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                        key: Key::Named(Named::Escape),
+                        repeat: false,
+                        ..
+                    }) => Some(Message::CancelNewCard),
+                    _ => None,
+                }));
+            } else if app.detail.is_some() {
                 subs.push(keyboard::listen().filter_map(|event| match event {
                     keyboard::Event::KeyPressed {
                         key, repeat: false, ..
@@ -1057,6 +1100,7 @@ impl App {
         let now = Instant::now();
         if selected != self.selected {
             self.appeared.clear();
+            self.new_card = None;
             self.reloaded = now;
         } else {
             for card in &board {
@@ -1269,6 +1313,10 @@ impl App {
             progress_bar(0.0..=1.0, fill)
                 .girth(3)
                 .style(theme::gauge(gauge_color)),
+            button(text("+").size(11))
+                .padding([0, 6])
+                .on_press(Message::NewCard(col))
+                .style(theme::button(false)),
         ]
         .spacing(8)
         .align_y(Alignment::Center);
@@ -1313,7 +1361,21 @@ impl App {
         let list = scrollable(list.push(tail))
             .direction(theme::thin())
             .style(theme::scrollbar);
-        let panel = container(column![header, rule::horizontal(1), list].spacing(10))
+        let mut head = column![header].spacing(10);
+        if let Some((_, draft)) = self
+            .new_card
+            .as_ref()
+            .filter(|(new_col, _)| *new_col == col)
+        {
+            head = head.push(
+                text_input("title, Enter to add", draft)
+                    .id(NEW_CARD_ID)
+                    .on_input(Message::NewCardEdited)
+                    .on_submit(Message::CreateCard)
+                    .style(theme::input),
+            );
+        }
+        let panel = container(column![head, rule::horizontal(1), list].spacing(10))
             .padding(10)
             .width(Length::Fill)
             .height(Length::Fill)
