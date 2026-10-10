@@ -341,10 +341,23 @@ fn open() -> State {
         Ok(id) => app.last_event = id,
         Err(e) => app.read_error(e),
     }
-    if let Err(e) = agents::install_agents(&agents::agents_dir())
-        .and_then(|_| skills::install_skills(&skills::skills_dir()))
-    {
-        app.error = Some(format!("agent files: {e}"));
+    let installed = [
+        ("agent files", agents::install_agents(&agents::agents_dir())),
+        ("skills", skills::install_skills(&skills::skills_dir())),
+    ];
+    let problems: Vec<String> = installed
+        .into_iter()
+        .flat_map(|(label, result)| match result {
+            Err(e) => vec![format!("{label}: {e}")],
+            Ok(actions) => actions
+                .into_iter()
+                .filter(|(_, action)| action.starts_with("skipped"))
+                .map(|(file, _)| format!("{file} not replaced: it has no station marker"))
+                .collect(),
+        })
+        .collect();
+    if !problems.is_empty() {
+        app.error = Some(problems.join("; "));
     }
     Ok(app)
 }

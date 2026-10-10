@@ -74,8 +74,9 @@ project setup writes that path.
 The MSI (`installer/`, per-user, `pwsh installer/build.ps1`; WiX 5 via `dotnet tool install
 --global wix --version 5.0.2`, since v6+ asks for an OSMF EULA) cannot replace a locked
 file, so it owns a second copy in `%LOCALAPPDATA%\FuelStation\app\` (Start menu shortcut,
-fuel pump icon) and runs that copy's `install` after InstallFinalize. Uninstall removes both
-copies; the database in `%APPDATA%\FuelStation` stays.
+fuel pump icon) and runs that copy's `install` after InstallFinalize. Uninstall removes the
+`app\` copy only: `bin\` may be locked by open sessions and `.mcp.json` files point at it;
+the database in `%APPDATA%\FuelStation` stays.
 
 ## Data model
 

@@ -16,8 +16,6 @@
             <File Id="Exe" Name="fuel-station.exe" Source="$(Exe)" />
             <RegistryValue Root="HKCU" Key="Software\FuelStation" Name="exe" Type="integer"
                            Value="1" KeyPath="yes" />
-            <RemoveFile Id="RemoveBinExe" Directory="BinDir" Name="fuel-station*.exe"
-                        On="uninstall" />
             <RemoveFolder Id="RemoveAppDir" On="uninstall" />
             <RemoveFolder Id="RemoveBinDir" Directory="BinDir" On="uninstall" />
             <RemoveFolder Id="RemoveAppRoot" Directory="AppRoot" On="uninstall" />
