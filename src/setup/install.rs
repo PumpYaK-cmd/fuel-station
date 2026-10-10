@@ -69,7 +69,44 @@ fn install_into(src: &Path, bin: &Path, gui: &Path) -> io::Result<Vec<PathBuf>> 
 }
 
 pub fn install() -> io::Result<Vec<PathBuf>> {
+    refuse_redirect()?;
     install_into(&std::env::current_exe()?, &bin_dir(), &gui_dir())
+}
+
+fn refuse_redirect() -> io::Result<()> {
+    let (Some(local), Some(app)) = (std::env::var_os("LOCALAPPDATA"), app_dir()) else {
+        return Ok(());
+    };
+    fs::create_dir_all(&app)?;
+    let probe = format!("probe-{}.tmp", std::process::id());
+    fs::write(app.join(&probe), "")?;
+    let copy = redirected_copy(Path::new(&local), &app, &probe);
+    let _ = fs::remove_file(app.join(&probe));
+    let Some(copy) = copy else {
+        return Ok(());
+    };
+    let _ = fs::remove_dir(&app);
+    Err(io::Error::other(format!(
+        "{} is redirected to {}: this runs inside an MSIX app (Claude desktop) and the folder \
+         does not exist yet. Run `fuel-station install` once from a terminal outside Claude.",
+        app.display(),
+        copy.parent().unwrap_or(&copy).display()
+    )))
+}
+
+fn redirected_copy(local: &Path, app: &Path, probe: &str) -> Option<PathBuf> {
+    let rel = app.strip_prefix(local).ok()?;
+    fs::read_dir(local.join("Packages"))
+        .ok()?
+        .flatten()
+        .map(|e| {
+            e.path()
+                .join("LocalCache")
+                .join("Local")
+                .join(rel)
+                .join(probe)
+        })
+        .find(|p| p.is_file())
 }
 
 pub fn cleanup_old(dir: &Path) {
@@ -148,6 +185,27 @@ mod tests {
         let (bin, gui) = (tmp.path().join("bin"), tmp.path().join("app"));
         assert_eq!(install_into(&src, &bin, &gui).unwrap(), vec![bin.join(EXE)]);
         assert!(!gui.exists());
+    }
+
+    #[test]
+    fn finds_probe_in_package_local_cache() {
+        let tmp = tempfile::tempdir().unwrap();
+        let local = tmp.path();
+        let app = local.join("FuelStation");
+        assert_eq!(redirected_copy(local, &app, "p.tmp"), None);
+        let cache = local.join("Packages/Claude_x/LocalCache/Local/FuelStation");
+        fs::create_dir_all(&cache).unwrap();
+        fs::create_dir_all(local.join("Packages/Other_y")).unwrap();
+        assert_eq!(redirected_copy(local, &app, "p.tmp"), None);
+        write(&cache.join("p.tmp"), "");
+        assert_eq!(
+            redirected_copy(local, &app, "p.tmp"),
+            Some(
+                local
+                    .join("Packages/Claude_x")
+                    .join("LocalCache/Local/FuelStation/p.tmp")
+            )
+        );
     }
 
     #[test]

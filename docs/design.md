@@ -93,6 +93,10 @@ shell) make under `%APPDATA%` or `%LOCALAPPDATA%` go to a private copy in
 `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\`, while the GUI started from Explorer uses
 the real folder. A db under AppData splits into two boards, so it lives in the user
 profile instead. `\\localhost\C$\...` paths bypass the redirect when debugging from inside.
+Only a folder that does not yet exist in the real AppData is redirected; writes inside an
+existing one go through. So `install` writes a probe file into `%LOCALAPPDATA%\FuelStation`
+and refuses (removing the empty copy) when the probe shows up under
+`Packages\*\LocalCache\Local\`: the first install has to run outside Claude.
 
 ## Data model
 
