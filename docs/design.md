@@ -22,8 +22,8 @@ Station's MCP tools, and the GUI shows it live.
 Station can start Truck on a card from the card detail panel (RUN section).
 - Command: `claude -p "/grab <KEY>" --output-format stream-json --verbose
   --permission-mode auto --max-budget-usd 10` in the project's `path`, plus
-  `--mcp-config <path>/.mcp.json` when that file exists. One run per card; several cards
-  may run at once.
+  `--mcp-config <path>/.mcp.json` when that file exists. One run per project: Truck works
+  and commits in the project's own checkout, so two runs would edit the same files.
 - Auth is whatever the user's `claude` CLI is logged into; Station stores no keys.
 - Permissions: `auto`, never `bypassPermissions`. Denials show in the run log.
 - Cost: `RUN_BUDGET_USD` (10) per run; the final `result` line's cost and turns show in
@@ -34,8 +34,8 @@ Station can start Truck on a card from the card detail panel (RUN section).
 - Runs live in memory only. The card gets `report` events from `manager`: "launched
   Truck", "Truck run stopped", "Truck run exited: ...".
 - Enabled when the project has a path, the card is not human, not in Done, not held by a
-  checked-in agent, and no run is active for it; otherwise the reason shows beside the
-  button. A running card shows `▶ truck` on the board.
+  checked-in agent, and no run is active in its project; otherwise the reason shows beside
+  the button. A running card shows `▶ truck` on the board.
 
 ## Architecture
 

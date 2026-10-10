@@ -967,6 +967,14 @@ impl App {
                 holder.name
             ));
         }
+        if let Some(other) = self.runs.iter().find_map(|(key, run)| {
+            (run.is_running()
+                && key.rsplit_once('-').map(|(project, _)| project)
+                    == Some(card.project_key.as_str()))
+            .then_some(key)
+        }) {
+            return Err(format!("{other} is running in this project"));
+        }
         self.projects
             .iter()
             .find(|p| p.key == card.project_key)
