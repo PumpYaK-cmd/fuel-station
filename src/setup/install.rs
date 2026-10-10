@@ -60,13 +60,16 @@ pub fn gui_dir() -> PathBuf {
     app_dir().expect("LOCALAPPDATA is not set").join("app")
 }
 
-pub fn install() -> io::Result<Vec<PathBuf>> {
-    let src = std::env::current_exe()?;
-    let mut installed = vec![install_to(&src, &bin_dir())?];
-    if gui_dir().is_dir() {
-        installed.push(install_to(&src, &gui_dir())?);
+fn install_into(src: &Path, bin: &Path, gui: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut installed = vec![install_to(src, bin)?];
+    if gui.is_dir() {
+        installed.push(install_to(src, gui)?);
     }
     Ok(installed)
+}
+
+pub fn install() -> io::Result<Vec<PathBuf>> {
+    install_into(&std::env::current_exe()?, &bin_dir(), &gui_dir())
 }
 
 pub fn cleanup_old(dir: &Path) {
@@ -122,6 +125,29 @@ mod tests {
         write(&dest, "v1");
         assert_eq!(install_to(&dest, &dir).unwrap(), dest);
         assert_eq!(fs::read_to_string(dest).unwrap(), "v1");
+    }
+
+    #[test]
+    fn install_refreshes_existing_gui_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src.exe");
+        write(&src, "v2");
+        let (bin, gui) = (tmp.path().join("bin"), tmp.path().join("app"));
+        fs::create_dir_all(&gui).unwrap();
+        write(&gui.join(EXE), "v1");
+        let installed = install_into(&src, &bin, &gui).unwrap();
+        assert_eq!(installed, vec![bin.join(EXE), gui.join(EXE)]);
+        assert_eq!(fs::read_to_string(gui.join(EXE)).unwrap(), "v2");
+    }
+
+    #[test]
+    fn install_skips_missing_gui_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src.exe");
+        write(&src, "v1");
+        let (bin, gui) = (tmp.path().join("bin"), tmp.path().join("app"));
+        assert_eq!(install_into(&src, &bin, &gui).unwrap(), vec![bin.join(EXE)]);
+        assert!(!gui.exists());
     }
 
     #[test]

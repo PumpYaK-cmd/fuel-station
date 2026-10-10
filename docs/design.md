@@ -82,7 +82,8 @@ the database in `%USERPROFILE%\.fuel-station` stays.
 `install` also refreshes `app\` when it exists, so a local update needs no MSI:
 `scripts/update.ps1` builds release, stops the GUI (processes without an `mcp` argument),
 runs `install` and relaunches the GUI if one was open. Open sessions keep the old `mcp` server
-until restarted.
+until restarted. A manual `install` with the GUI open leaves `fuel-station.old.exe` in `app\`
+until the next start; an uninstall before then leaves that file and its folder behind.
 
 ### MSIX AppData redirect
 

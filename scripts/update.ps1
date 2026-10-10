@@ -4,7 +4,7 @@ cargo build --release
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
 $gui = Get-CimInstance Win32_Process -Filter "Name = 'fuel-station.exe'" |
-    Where-Object { $_.CommandLine -notmatch '\smcp(\s|$)' }
+    Where-Object { $_.CommandLine -and $_.CommandLine -notmatch '\smcp(\s|$)' }
 foreach ($p in $gui) {
     Stop-Process -Id $p.ProcessId -Force
     Wait-Process -Id $p.ProcessId -ErrorAction SilentlyContinue
