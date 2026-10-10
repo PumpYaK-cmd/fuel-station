@@ -60,9 +60,7 @@ fn main() {
         attach_parent_console();
     }
     let cli = Cli::parse();
-    if !matches!(cli.command, Some(Command::Mcp { .. }))
-        && std::env::var_os("LOCALAPPDATA").is_some()
-    {
+    if !matches!(cli.command, Some(Command::Mcp { .. })) && setup::install::app_dir().is_some() {
         setup::install::cleanup_old(&setup::install::bin_dir());
         setup::install::cleanup_old(&setup::install::gui_dir());
     }
