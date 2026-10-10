@@ -138,7 +138,7 @@ struct Drag {
     lifted: Option<Instant>,
     slot: Option<Slot>,
     slot_at: Instant,
-    prev: Option<(Slot, Instant, f32)>,
+    closing: Vec<(Slot, Instant, f32)>,
 }
 
 impl Drag {
@@ -164,13 +164,18 @@ impl Drag {
         }
         let now = Instant::now();
         let open = ease_out(self.slot_at.elapsed().as_secs_f32() / GAP_SECS);
-        let closing = match &self.prev {
-            Some((prev, at, from)) if Some(prev) == slot.as_ref() => {
-                from * (1.0 - ease_out(at.elapsed().as_secs_f32() / GAP_SECS))
-            }
-            _ => 0.0,
-        };
-        self.prev = self.slot.take().map(|old| (old, now, open));
+        let closing = self
+            .closing
+            .iter()
+            .filter(|(old, _, _)| Some(old) == slot.as_ref())
+            .map(|(_, at, from)| from * (1.0 - ease_out(at.elapsed().as_secs_f32() / GAP_SECS)))
+            .sum::<f32>();
+        self.closing.retain(|(old, at, _)| {
+            Some(old) != slot.as_ref() && at.elapsed().as_secs_f32() < GAP_SECS
+        });
+        if let Some(old) = self.slot.take() {
+            self.closing.push((old, now, open));
+        }
         self.slot = slot;
         let head_start = GAP_SECS * (1.0 - (1.0 - closing).cbrt());
         self.slot_at = now
@@ -184,12 +189,12 @@ impl Drag {
             Some(slot) if is(slot) => ease_out(self.slot_at.elapsed().as_secs_f32() / GAP_SECS),
             _ => 0.0,
         };
-        let closing = match &self.prev {
-            Some((slot, at, from)) if is(slot) => {
-                from * (1.0 - ease_out(at.elapsed().as_secs_f32() / GAP_SECS))
-            }
-            _ => 0.0,
-        };
+        let closing = self
+            .closing
+            .iter()
+            .filter(|(slot, _, _)| is(slot))
+            .map(|(_, at, from)| from * (1.0 - ease_out(at.elapsed().as_secs_f32() / GAP_SECS)))
+            .sum::<f32>();
         DROP_GAP * (opening + closing)
     }
 }
@@ -584,7 +589,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     lifted: None,
                     slot: None,
                     slot_at: now,
-                    prev: None,
+                    closing: Vec::new(),
                 });
             }
         }
@@ -1598,5 +1603,25 @@ mod tests {
     #[test]
     fn drop_before_dragged_keeps_its_place() {
         assert_eq!(index(&["A", "B", "C"], "B", Some("B")), 1);
+    }
+
+    #[test]
+    fn quick_slot_changes_keep_every_closing_gap() {
+        let now = Instant::now();
+        let mut drag = Drag {
+            key: "X".into(),
+            over: Some(Column::Ready),
+            over_at: now,
+            moved: true,
+            cursor: Point::ORIGIN,
+            lifted: Some(now),
+            slot: Some((Column::Ready, Some("A".into()))),
+            slot_at: now - Duration::from_secs(1),
+            closing: Vec::new(),
+        };
+        drag.set_slot(Some((Column::Ready, Some("B".into()))));
+        drag.set_slot(Some((Column::Ready, Some("C".into()))));
+        assert!(drag.gap(Column::Ready, Some("A")) > 0.0);
+        assert_eq!(drag.closing.len(), 2);
     }
 }
