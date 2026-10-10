@@ -547,6 +547,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             }
         }
         Message::Repair(key) => {
+            app.new_card = None;
             let Some(project) = app.projects.iter().find(|p| p.key == key) else {
                 return Task::none();
             };
@@ -795,6 +796,7 @@ fn request_leave(app: &mut App, target: Leave) -> Task<Message> {
 }
 
 fn leave(app: &mut App, target: Leave) -> Task<Message> {
+    app.new_card = None;
     match target {
         Leave::Close => app.detail = None,
         Leave::Open(key) => match app.store.card_show(&key) {
@@ -1041,6 +1043,7 @@ impl App {
     fn cancel_pending(&mut self) {
         self.detecting = None;
         self.picking = None;
+        self.new_card = None;
     }
 
     fn with_leave_bar<'a>(&'a self, content: Element<'a, Message>) -> Element<'a, Message> {
