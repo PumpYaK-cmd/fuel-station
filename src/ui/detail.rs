@@ -76,11 +76,17 @@ impl Detail {
                 .on_action(Message::BodyAction)
                 .style(theme::editor)
                 .height(160),
-            button(text("Save"))
-                .on_press_maybe(
-                    (self.dirty && !self.title.trim().is_empty()).then_some(Message::Save),
-                )
-                .style(theme::button(false)),
+            row![
+                button(text("Save"))
+                    .on_press_maybe(
+                        (self.dirty && !self.title.trim().is_empty()).then_some(Message::Save),
+                    )
+                    .style(theme::button(false)),
+                space::horizontal(),
+                button(text("Human"))
+                    .on_press(Message::ToggleHuman)
+                    .style(theme::button(card.human)),
+            ],
         ]
         .spacing(6);
 
@@ -97,9 +103,6 @@ impl Detail {
         let mut meta = Vec::new();
         if let Some(tier) = &card.tier {
             meta.push(format!("tier {tier}"));
-        }
-        if card.human {
-            meta.push("HUMAN".to_string());
         }
         if card.commit_base.is_some() || card.commit_head.is_some() {
             meta.push(format!(

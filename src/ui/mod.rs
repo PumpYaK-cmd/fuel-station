@@ -252,6 +252,7 @@ enum Message {
     AddComment,
     MoveTo(Column),
     Step(bool),
+    ToggleHuman,
     LinkClicked,
     AddProject,
     PickFolder(String),
@@ -461,6 +462,16 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::MoveTo(column) => {
             if let Some(d) = &app.detail {
                 let result = app.store.card_move(&d.key, &manager(), column);
+                app.after_write(result);
+            }
+        }
+        Message::ToggleHuman => {
+            if let Some(d) = &app.detail {
+                let patch = CardPatch {
+                    human: Some(!d.card.card.human),
+                    ..CardPatch::default()
+                };
+                let result = app.store.card_update(&d.key, &manager(), &patch);
                 app.after_write(result);
             }
         }
