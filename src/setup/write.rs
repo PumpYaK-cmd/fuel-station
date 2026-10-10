@@ -133,8 +133,8 @@ fn mcp_local(dir: &Path, key: &str, exe: &Path) -> Written {
         "--project",
         key,
     ];
-    let registered = claude(dir, &args).or_else(|_| {
-        claude(dir, &["mcp", "remove", "--scope", "local", "station"])?;
+    let registered = claude(dir, &args).or_else(|add_err| {
+        claude(dir, &["mcp", "remove", "--scope", "local", "station"]).map_err(|_| add_err)?;
         claude(dir, &args)
     });
     match registered {
