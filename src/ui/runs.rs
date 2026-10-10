@@ -33,6 +33,7 @@ pub enum Status {
 }
 
 pub struct Run {
+    pub id: u64,
     pid: Option<u32>,
     pub lines: VecDeque<String>,
     pub status: Status,
@@ -130,7 +131,7 @@ impl Drop for Run {
     }
 }
 
-pub fn start(dir: PathBuf, key: String) -> (Task<Message>, Run) {
+pub fn start(dir: PathBuf, key: String, id: u64) -> (Task<Message>, Run) {
     let card_key = key.clone();
     let stream = iced::stream::channel(100, async move |mut sender: Sender<RunEvent>| {
         let mut child = match launch::command(&dir, &card_key).spawn() {
@@ -168,9 +169,12 @@ pub fn start(dir: PathBuf, key: String) -> (Task<Message>, Run) {
         let code = child.wait().await.ok().and_then(|s| s.code());
         let _ = sender.send(RunEvent::Ended(code)).await;
     });
-    let (task, handle) =
-        Task::run(stream, move |event| Message::RunEvent(key.clone(), event)).abortable();
+    let (task, handle) = Task::run(stream, move |event| {
+        Message::RunEvent(key.clone(), id, event)
+    })
+    .abortable();
     let run = Run {
+        id,
         pid: None,
         lines: VecDeque::new(),
         status: Status::Running,

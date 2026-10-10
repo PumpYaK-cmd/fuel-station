@@ -124,6 +124,7 @@ struct App {
     filter: Filter,
     drag: Option<Drag>,
     runs: HashMap<String, Run>,
+    next_run: u64,
     landed: Option<(String, Instant)>,
 }
 
@@ -280,7 +281,7 @@ enum Message {
     FocusSearch,
     Launch,
     StopRun,
-    RunEvent(String, RunEvent),
+    RunEvent(String, u64, RunEvent),
 }
 
 fn boot() -> (State, Task<Message>) {
@@ -339,6 +340,7 @@ fn open() -> State {
         filter: Filter::All,
         drag: None,
         runs: HashMap::new(),
+        next_run: 0,
         landed: None,
     };
     app.reload(None);
@@ -675,7 +677,9 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             let key = d.key.clone();
             let result = app.store.report(&key, &manager(), "launched Truck");
             app.after_write(result);
-            let (task, run) = runs::start(dir, key.clone());
+            let id = app.next_run;
+            app.next_run += 1;
+            let (task, run) = runs::start(dir, key.clone(), id);
             app.runs.insert(key, run);
             return task;
         }
@@ -692,8 +696,13 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 app.after_write(result);
             }
         }
-        Message::RunEvent(key, event) => {
-            if let Some(report) = app.runs.get_mut(&key).and_then(|run| run.apply(event)) {
+        Message::RunEvent(key, id, event) => {
+            if let Some(report) = app
+                .runs
+                .get_mut(&key)
+                .filter(|run| run.id == id)
+                .and_then(|run| run.apply(event))
+            {
                 let result = app.store.report(&key, &manager(), &report);
                 app.after_write(result);
             }
