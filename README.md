@@ -23,7 +23,7 @@ inside the Claude desktop app: the desktop app is an MSIX package that redirects
 writes, and `install` refuses to run there. Claude Code in a terminal is fine.
 
 ```bash
-git clone <this repo url> fuel-station
+git clone https://github.com/PumpYaK-cmd/fuel-station.git
 ```
 
 ```bash
