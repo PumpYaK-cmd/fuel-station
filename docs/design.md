@@ -179,8 +179,10 @@ the marker is user-edited and left alone.
    - **Local only** (team repos where `CLAUDE.md` and `.mcp.json` are shared; on by default
      when `CLAUDE.local.md` exists): the block goes into `CLAUDE.local.md`, the server is
      registered with `claude mcp add --scope local station -- <exe> mcp --project <KEY>`
-     (removed first, so reruns replace it), `CLAUDE.local.md` is added to
-     `.git/info/exclude` unless already ignored, and no tracked file or git init is touched.
+     (remove and add again when it already exists), `CLAUDE.local.md` is added to
+     `.git/info/exclude` unless already ignored, and no tracked file or git init is touched
+     (a tracked `CLAUDE.local.md` is an error row). Switching modes does not remove the
+     other mode's block, `.mcp.json` entry or local registration.
 5. A result list shows each file written. The same sheet later offers **Repair setup**.
 
 Claude Code asks once per project to approve a new `.mcp.json` server. That prompt is the

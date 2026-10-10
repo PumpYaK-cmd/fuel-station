@@ -36,10 +36,15 @@ pub fn apply(p: &Project, exe: &Path, local: bool) -> Vec<Written> {
         return vec![Written::new(PathBuf::new(), "error: project has no path")];
     };
     if local {
-        let mut out = vec![
-            mcp_local(dir, &p.key, exe),
-            claude_md(dir, LOCAL_MD, &p.key),
-        ];
+        let mut out = vec![mcp_local(dir, &p.key, exe)];
+        if git(dir, &["ls-files", "--error-unmatch", LOCAL_MD]).is_ok() {
+            out.push(Written::new(
+                dir.join(LOCAL_MD),
+                "error: tracked by git, not edited",
+            ));
+            return out;
+        }
+        out.push(claude_md(dir, LOCAL_MD, &p.key));
         if in_work_tree(dir) {
             out.push(exclude_local_md(dir));
         }
@@ -115,7 +120,6 @@ fn mcp_json(dir: &Path, key: &str, exe: &Path) -> Written {
 
 fn mcp_local(dir: &Path, key: &str, exe: &Path) -> Written {
     let path = PathBuf::from("claude mcp add --scope local station");
-    let _ = claude(dir, &["mcp", "remove", "--scope", "local", "station"]);
     let exe = exe.display().to_string();
     let args = [
         "mcp",
@@ -129,7 +133,11 @@ fn mcp_local(dir: &Path, key: &str, exe: &Path) -> Written {
         "--project",
         key,
     ];
-    match claude(dir, &args) {
+    let registered = claude(dir, &args).or_else(|_| {
+        claude(dir, &["mcp", "remove", "--scope", "local", "station"])?;
+        claude(dir, &args)
+    });
+    match registered {
         Ok(()) => Written::new(path, "registered"),
         Err(e) => Written::new(path, format!("error: {e}")),
     }
