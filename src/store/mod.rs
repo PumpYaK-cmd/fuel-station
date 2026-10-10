@@ -62,10 +62,12 @@ pub fn db_path() -> PathBuf {
     if let Some(path) = std::env::var_os("FUEL_STATION_DB") {
         return PathBuf::from(path);
     }
-    let appdata = std::env::var_os("APPDATA")
+    // Not under AppData: Claude desktop is MSIX and redirects its children's AppData writes
+    // to a private copy, so the GUI and the mcp server would open different databases.
+    let home = std::env::var_os("USERPROFILE")
         .map(PathBuf::from)
         .unwrap_or_default();
-    appdata.join("FuelStation").join("station.db")
+    home.join(".fuel-station").join("station.db")
 }
 
 pub struct Store {

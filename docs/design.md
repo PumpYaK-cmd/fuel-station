@@ -49,7 +49,8 @@ On Windows the exe is GUI-subsystem (no console from Explorer). CLI subcommands 
 the parent console; interactive cmd/PowerShell don't wait for it, so use
 `Start-Process -Wait` / `start /wait` when the exit code matters. Pipes wait as usual.
 
-Both modes open the same SQLite database: `%APPDATA%\FuelStation\station.db`, WAL mode,
+Both modes open the same SQLite database: `%USERPROFILE%\.fuel-station\station.db`
+(`FUEL_STATION_DB` overrides), WAL mode,
 `busy_timeout` 5000 ms on every connection. The MCP server works with the GUI closed.
 The GUI polls `PRAGMA data_version` on one long-lived connection every 300 ms and reloads
 the visible board when it changes (it changes only on commits from other connections, so
@@ -76,7 +77,15 @@ The MSI (`installer/`, per-user, `pwsh installer/build.ps1`; WiX 5 via `dotnet t
 file, so it owns a second copy in `%LOCALAPPDATA%\FuelStation\app\` (Start menu shortcut,
 fuel pump icon) and runs that copy's `install` after InstallFinalize. Uninstall removes the
 `app\` copy only: `bin\` may be locked by open sessions and `.mcp.json` files point at it;
-the database in `%APPDATA%\FuelStation` stays.
+the database in `%USERPROFILE%\.fuel-station` stays.
+
+### MSIX AppData redirect
+
+Claude desktop is an MSIX package. Writes its child processes (the `mcp` server, Claude's
+shell) make under `%APPDATA%` or `%LOCALAPPDATA%` go to a private copy in
+`%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\`, while the GUI started from Explorer uses
+the real folder. A db under AppData splits into two boards, so it lives in the user
+profile instead. `\\localhost\C$\...` paths bypass the redirect when debugging from inside.
 
 ## Data model
 
