@@ -56,7 +56,7 @@ impl Detail {
         &'a self,
         app_theme: &'a Theme,
         run: Option<&'a Run>,
-        can_launch: bool,
+        blocked: Option<String>,
     ) -> Element<'a, Message> {
         let card = &self.card.card;
         let header = row![
@@ -176,7 +176,7 @@ impl Detail {
             .push(moves.wrap())
             .push(rule::horizontal(1))
             .push(label("RUN"))
-            .push(run_section(run, can_launch))
+            .push(run_section(run, blocked))
             .spacing(10)
             .padding(10);
 
@@ -221,12 +221,20 @@ fn label(name: &str) -> Element<'_, Message> {
     text(name).color(theme::TEXT_MUTED).into()
 }
 
-fn run_section(run: Option<&Run>, can_launch: bool) -> Element<'_, Message> {
-    let action = match run {
-        Some(run) if run.is_running() => button(text("Stop")).on_press(Message::StopRun),
-        _ => button(text("Launch Truck")).on_press_maybe(can_launch.then_some(Message::Launch)),
+fn run_section(run: Option<&Run>, blocked: Option<String>) -> Element<'_, Message> {
+    let running = run.is_some_and(Run::is_running);
+    let action = if running {
+        button(text("Stop")).on_press(Message::StopRun)
+    } else {
+        button(text("Launch Truck")).on_press_maybe(blocked.is_none().then_some(Message::Launch))
     };
-    let mut section = column![action.style(theme::button(false))].spacing(6);
+    let mut top = row![action.style(theme::button(false))]
+        .spacing(10)
+        .align_y(Alignment::Center);
+    if let Some(reason) = blocked.filter(|_| !running) {
+        top = top.push(text(reason).color(theme::TEXT_MUTED));
+    }
+    let mut section = column![top].spacing(6);
     if let Some(run) = run {
         section = section
             .push(text(run.status_text()).color(theme::TEXT_MUTED))

@@ -33,8 +33,9 @@ Station can start Truck on a card from the card detail panel (RUN section).
   every running run the same way.
 - Runs live in memory only. The card gets `report` events from `manager`: "launched
   Truck", "Truck run stopped", "Truck run exited: ...".
-- Enabled when the project has a path, the card is not human, not in Done, and no run is
-  active for it. A running card shows `▶ truck` on the board.
+- Enabled when the project has a path, the card is not human, not in Done, not held by a
+  checked-in agent, and no run is active for it; otherwise the reason shows beside the
+  button. A running card shows `▶ truck` on the board.
 
 ## Architecture
 

@@ -669,7 +669,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             let Some(d) = &app.detail else {
                 return Task::none();
             };
-            let Some(dir) = app.launch_dir() else {
+            let Ok(dir) = app.launch_dir() else {
                 return Task::none();
             };
             let key = d.key.clone();
@@ -930,21 +930,41 @@ impl App {
         Task::batch(tasks)
     }
 
-    fn launch_dir(&self) -> Option<PathBuf> {
-        let card = &self.detail.as_ref()?.card.card;
-        if card.human
-            || card.column == Column::Done
-            || self.runs.get(&card.key).is_some_and(Run::is_running)
+    fn launch_dir(&self) -> Result<PathBuf, String> {
+        let card = &self
+            .detail
+            .as_ref()
+            .ok_or_else(|| "no card open".to_string())?
+            .card
+            .card;
+        if card.human {
+            return Err("human card".to_string());
+        }
+        if card.column == Column::Done {
+            return Err("card is done".to_string());
+        }
+        if self.runs.get(&card.key).is_some_and(Run::is_running) {
+            return Err("already running".to_string());
+        }
+        if let Some(holder) = self
+            .board
+            .iter()
+            .find(|c| c.key == card.key)
+            .and_then(|c| c.holder.as_ref())
         {
-            return None;
+            return Err(format!(
+                "held by {} {}",
+                role_glyph(holder.role),
+                holder.name
+            ));
         }
         self.projects
             .iter()
-            .find(|p| p.key == card.project_key)?
-            .path
-            .as_deref()
+            .find(|p| p.key == card.project_key)
+            .and_then(|p| p.path.as_deref())
             .filter(|p| !p.is_empty())
             .map(PathBuf::from)
+            .ok_or_else(|| "project has no folder".to_string())
     }
 
     fn cancel_pending(&mut self) {
@@ -1179,7 +1199,7 @@ impl App {
             main = main.push(detail.view(
                 &self.theme,
                 self.runs.get(&detail.key),
-                self.launch_dir().is_some(),
+                self.launch_dir().err(),
             ));
         }
         column![header, main]
