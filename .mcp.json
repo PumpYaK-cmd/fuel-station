@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "station": {
+      "type": "stdio",
+      "command": "C:\\Users\\gabri\\AppData\\Local\\FuelStation\\bin\\fuel-station.exe",
+      "args": [
+        "mcp",
+        "--project",
+        "FS"
+      ]
+    }
+  }
+}

@@ -12,8 +12,6 @@ trello CLI workflow. Spec: `docs/design.md`; read the section a card points at b
 - UI colors come from `ui::theme` tokens, never inline hex.
 - iced 0.14 rules: `rule::horizontal(1)` / `rule::vertical(1)`; the arg is drawn thickness.
 
-## Board & gate
-- Board: `trello --backend local --board fuel-station` · lists Backlog / Ready / Doing / Done · `[HUMAN]` cards need the user's hands: don't grab them.
-- Runbook: `CONTRIBUTING.md`. Ship mode: git. Default branch main, no remote yet.
-- (git) Worktrees (`/farm` only): `../fuel-station-wt`. Bootstrap in a fresh worktree: none.
-- Verify gate: `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`. Anything the gate can't cover → manual checklist in the plan.
+<!-- station -->
+Station project `FS`. Use the station MCP tools for the board; runbook is `/grab`.
+<!-- /station -->
