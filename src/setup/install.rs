@@ -56,8 +56,17 @@ pub fn install_to(src: &Path, dir: &Path) -> io::Result<PathBuf> {
     Ok(dest)
 }
 
-pub fn install() -> io::Result<PathBuf> {
-    install_to(&std::env::current_exe()?, &bin_dir())
+pub fn gui_dir() -> PathBuf {
+    app_dir().expect("LOCALAPPDATA is not set").join("app")
+}
+
+pub fn install() -> io::Result<Vec<PathBuf>> {
+    let src = std::env::current_exe()?;
+    let mut installed = vec![install_to(&src, &bin_dir())?];
+    if gui_dir().is_dir() {
+        installed.push(install_to(&src, &gui_dir())?);
+    }
+    Ok(installed)
 }
 
 pub fn cleanup_old(dir: &Path) {

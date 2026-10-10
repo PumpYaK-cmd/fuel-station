@@ -11,6 +11,7 @@ trello CLI workflow. Spec: `docs/design.md`; read the section a card points at b
 - Window is undecorated: the title bar is `ui::titlebar`; drag and window controls go through `window::{drag, minimize, toggle_maximize, close}` with `App::window`.
 - State shared between the GUI and `mcp` never lives under AppData: Claude desktop (MSIX) redirects its children's AppData writes (design.md, MSIX AppData redirect).
 - UI colors come from `ui::theme` tokens, never inline hex.
+- After `ship` on this project, run `pwsh scripts/update.ps1`: builds release, installs to `bin\` and `app\`, restarts an open GUI.
 - iced 0.14 rules: `rule::horizontal(1)` / `rule::vertical(1)`; the arg is drawn thickness.
 
 <!-- station -->

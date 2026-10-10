@@ -64,6 +64,7 @@ fn main() {
         && std::env::var_os("LOCALAPPDATA").is_some()
     {
         setup::install::cleanup_old(&setup::install::bin_dir());
+        setup::install::cleanup_old(&setup::install::gui_dir());
     }
     match cli.command {
         None => {
@@ -72,8 +73,10 @@ fn main() {
         }
         Some(Command::Mcp { project }) => mcp::run(&project),
         Some(Command::Install) => match setup::install::install() {
-            Ok(path) => {
-                println!("installed {}", path.display());
+            Ok(paths) => {
+                for path in paths {
+                    println!("installed {}", path.display());
+                }
                 let installed = setup::agents::install_agents(&setup::agents::agents_dir())
                     .and_then(|mut agents| {
                         agents.extend(setup::skills::install_skills(&setup::skills::skills_dir())?);

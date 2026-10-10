@@ -79,6 +79,11 @@ fuel pump icon) and runs that copy's `install` after InstallFinalize. Uninstall 
 `app\` copy only: `bin\` may be locked by open sessions and `.mcp.json` files point at it;
 the database in `%USERPROFILE%\.fuel-station` stays.
 
+`install` also refreshes `app\` when it exists, so a local update needs no MSI:
+`scripts/update.ps1` builds release, stops the GUI (processes without an `mcp` argument),
+runs `install` and relaunches the GUI if one was open. Open sessions keep the old `mcp` server
+until restarted.
+
 ### MSIX AppData redirect
 
 Claude desktop is an MSIX package. Writes its child processes (the `mcp` server, Claude's
