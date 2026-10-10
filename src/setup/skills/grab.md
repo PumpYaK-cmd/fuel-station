@@ -1,4 +1,4 @@
-# /station:grab: ship one card
+# /grab: ship one card
 
 You are Truck. Run one card start to finish through the six phases below. Put the six
 phases in your task list before starting so phase 6 doesn't get lost. Stop after phase 6:
@@ -88,7 +88,7 @@ with what changed the call.
 - git mode: commit (imperative subject, body = why). Card already in Review (Fuel
   submitted): skip; otherwise `submit_review(id, base, head)` with the phase 1 base and
   `git rev-parse HEAD`.
-- Follow the /station:review section below: a cold `mechanic` reviews `base..head` and
+- Follow the /review section below: a cold `mechanic` reviews `base..head` and
   records `review_result`. Fix every finding; anything too big becomes a follow-up card.
 - Fixes: commit, `submit_review` again with the new head. A Fable Truck sends non-trivial
   fixes to `fuel-high`: a review finding is a failed attempt, it never goes back to Tier 1.

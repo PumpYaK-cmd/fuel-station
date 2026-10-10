@@ -1,0 +1,50 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Fuel Station" Manufacturer="Fuel Station" Version="$(Version)"
+           UpgradeCode="6C802514-9216-4760-80EA-42233955C105" Scope="perUser">
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer Fuel Station is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="FuelStation.ico" SourceFile="assets\icon\fuel-station.ico" />
+    <Property Id="ARPPRODUCTICON" Value="FuelStation.ico" />
+    <!-- Open Claude sessions run bin\fuel-station.exe (mcp) and lock it, so the MSI owns a
+         copy in app\ and its `install` command copies it into bin\ (renaming a locked exe aside). -->
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="AppRoot" Name="FuelStation">
+        <Directory Id="AppDir" Name="app">
+          <Component Id="Exe" Guid="7A3D25F1-9820-463A-9547-AF5F5B8DF674">
+            <File Id="Exe" Name="fuel-station.exe" Source="$(Exe)" />
+            <RegistryValue Root="HKCU" Key="Software\FuelStation" Name="exe" Type="integer"
+                           Value="1" KeyPath="yes" />
+            <RemoveFile Id="RemoveBinExe" Directory="BinDir" Name="fuel-station*.exe"
+                        On="uninstall" />
+            <RemoveFolder Id="RemoveAppDir" On="uninstall" />
+            <RemoveFolder Id="RemoveBinDir" Directory="BinDir" On="uninstall" />
+            <RemoveFolder Id="RemoveAppRoot" Directory="AppRoot" On="uninstall" />
+          </Component>
+        </Directory>
+        <Directory Id="BinDir" Name="bin" />
+      </Directory>
+    </StandardDirectory>
+
+    <CustomAction Id="InstallToBin" FileRef="Exe" ExeCommand="install" Execute="immediate"
+                  Return="check" />
+    <InstallExecuteSequence>
+      <Custom Action="InstallToBin" After="InstallFinalize" Condition="NOT REMOVE" />
+    </InstallExecuteSequence>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut">
+        <Shortcut Id="StartMenuShortcut" Name="Fuel Station" Target="[AppDir]fuel-station.exe"
+                  WorkingDirectory="AppDir" Icon="FuelStation.ico" />
+        <RegistryValue Root="HKCU" Key="Software\FuelStation" Name="shortcut" Type="integer"
+                       Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <Feature Id="Main">
+      <ComponentRef Id="Exe" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Package>
+</Wix>

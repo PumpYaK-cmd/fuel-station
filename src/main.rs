@@ -74,10 +74,15 @@ fn main() {
         Some(Command::Install) => match setup::install::install() {
             Ok(path) => {
                 println!("installed {}", path.display());
-                match setup::agents::install_agents(&setup::agents::agents_dir()) {
+                let installed = setup::agents::install_agents(&setup::agents::agents_dir())
+                    .and_then(|mut agents| {
+                        agents.extend(setup::skills::install_skills(&setup::skills::skills_dir())?);
+                        Ok(agents)
+                    });
+                match installed {
                     Ok(actions) => {
                         for (file, action) in actions {
-                            println!("agent {file}: {action}");
+                            println!("{file}: {action}");
                         }
                     }
                     Err(e) => {

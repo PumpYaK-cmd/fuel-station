@@ -10,40 +10,50 @@ const AGENTS: [(&str, &str); 3] = [
     ("mechanic.md", include_str!("agents/mechanic.md")),
 ];
 
-pub fn agents_dir() -> PathBuf {
+pub fn claude_dir() -> PathBuf {
     let base = std::env::var_os("USERPROFILE").expect("USERPROFILE is not set");
-    PathBuf::from(base).join(".claude").join("agents")
+    PathBuf::from(base).join(".claude")
 }
 
-fn version(text: &str) -> Option<u32> {
+pub fn agents_dir() -> PathBuf {
+    claude_dir().join("agents")
+}
+
+pub(super) fn version(text: &str, marker: &str) -> Option<u32> {
     text.lines()
-        .find_map(|line| line.trim().strip_prefix(MARKER))
+        .find_map(|line| line.trim().strip_prefix(marker))
         .and_then(|n| n.trim().parse().ok())
 }
 
-pub fn install_agents(agents_dir: &Path) -> io::Result<Vec<(String, &'static str)>> {
-    fs::create_dir_all(agents_dir)?;
-    let mut actions = Vec::new();
-    for (name, bundled) in AGENTS {
-        let path = agents_dir.join(name);
-        let action = match fs::read_to_string(&path) {
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                fs::write(&path, bundled)?;
-                "created"
+pub(super) fn install_file(path: &Path, bundled: &str, marker: &str) -> io::Result<&'static str> {
+    match fs::read_to_string(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            if let Some(dir) = path.parent() {
+                fs::create_dir_all(dir)?;
             }
-            Err(e) => return Err(e),
-            Ok(installed) => match (version(&installed), version(bundled)) {
-                (Some(have), Some(want)) if have < want => {
-                    fs::write(&path, bundled)?;
-                    "updated"
-                }
-                (Some(_), _) => "current",
-                (None, _) => "skipped (user edited)",
-            },
-        };
-        actions.push((name.to_string(), action));
+            fs::write(path, bundled)?;
+            Ok("created")
+        }
+        Err(e) => Err(e),
+        Ok(installed) => match (version(&installed, marker), version(bundled, marker)) {
+            (Some(have), Some(want)) if have < want => {
+                fs::write(path, bundled)?;
+                Ok("updated")
+            }
+            (Some(_), _) => Ok("current"),
+            (None, _) => Ok("skipped (user edited)"),
+        },
     }
-    Ok(actions)
+}
+
+pub fn install_agents(agents_dir: &Path) -> io::Result<Vec<(String, &'static str)>> {
+    AGENTS
+        .iter()
+        .map(|(name, bundled)| {
+            let action = install_file(&agents_dir.join(name), bundled, MARKER)?;
+            Ok((name.to_string(), action))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -119,7 +129,7 @@ mod tests {
                     .any(|line| line.trim() == format!("name: {stem}")),
                 "{file}"
             );
-            assert!(version(text).is_some(), "{file}");
+            assert!(version(text, MARKER).is_some(), "{file}");
         }
     }
 }

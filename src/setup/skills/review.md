@@ -1,4 +1,4 @@
-# /station:review: cold review of the current card
+# /review: cold review of the current card
 
 You are Truck. Review the card this session is working on: the one you claimed, in Doing
 or Review. Every mutating call passes `actor: {role: "truck", name: "truck"}`.

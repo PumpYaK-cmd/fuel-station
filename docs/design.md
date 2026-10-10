@@ -20,7 +20,7 @@ Station's MCP tools, and the GUI shows it live.
 ### Launching
 
 Station can start Truck on a card from the card detail panel (RUN section).
-- Command: `claude -p "/mcp__station__grab <KEY>" --output-format stream-json --verbose
+- Command: `claude -p "/grab <KEY>" --output-format stream-json --verbose
   --permission-mode auto --max-budget-usd 10` in the project's `path`, plus
   `--mcp-config <path>/.mcp.json` when that file exists. One run per card; several cards
   may run at once.
@@ -55,8 +55,8 @@ The GUI polls `PRAGMA data_version` on one long-lived connection every 300 ms an
 the visible board when it changes (it changes only on commits from other connections, so
 the GUI refreshes itself after its own writes).
 
-Modules: `store` (schema, migrations, all card operations), `mcp` (tools and prompts over
-`store`), `ui` (iced), `setup` (Add Project, agent install), `import` (trello boards).
+Modules: `store` (schema, migrations, all card operations), `mcp` (tools over `store`),
+`ui` (iced), `setup` (Add Project, agent and skill install), `import` (trello boards).
 `store` is the only module that writes SQL.
 
 Crates: `iced` 0.14, `rmcp` 3.5 (`transport-io`, `macros`), `rusqlite` 0.40 (`bundled`),
@@ -70,6 +70,12 @@ Every open Claude session holds a running `fuel-station.exe mcp`. Windows will n
 (a locked exe is renamed to `fuel-station.old.exe`, which Windows allows for a running exe,
 and deleted at a later start once its sessions close), and
 project setup writes that path.
+
+The MSI (`installer/`, per-user, `pwsh installer/build.ps1`; WiX 5 via `dotnet tool install
+--global wix --version 5.0.2`, since v6+ asks for an OSMF EULA) cannot replace a locked
+file, so it owns a second copy in `%LOCALAPPDATA%\FuelStation\app\` (Start menu shortcut,
+fuel pump icon) and runs that copy's `install` after InstallFinalize. Uninstall removes both
+copies; the database in `%APPDATA%\FuelStation` stays.
 
 ## Data model
 
@@ -115,23 +121,29 @@ its subagents, so the server cannot tell callers apart without it.
 | `ship(id, summary, commit)` | Review → Done + closing comment |
 | `checkin(role, name, card?)` / `checkout` | Agent presence for the agents strip |
 
-MCP prompts appear in Claude Code as `/station:<name>`. They replace the skills and
-`CONTRIBUTING.md`, and ship with the binary, so projects need no runbook file:
+## Skills
 
-- `/station:grab [card]`: Truck runs one card end to end (claim, plan onto the card,
-  triage block, implement or hand to Fuel, Mechanic review, ship).
-- `/station:farm [n]`: Truck plans a batch and spawns one Fuel per card in worktrees.
-- `/station:review`: spawn Mechanic on the current card's `base..head`.
-- `/station:card <text>`: file a card from a sentence.
+The runbook ships with the binary as user skills, so projects need no runbook file:
+
+- `/grab [card]`: Truck runs one card end to end (claim, plan onto the card, triage block,
+  implement or hand to Fuel, Mechanic review, ship).
+- `/farm [n]`: Truck plans a batch and spawns one Fuel per card in worktrees.
+- `/review`: spawn Mechanic on the current card's `base..head`.
+- `/card <text>`: file a card from a sentence.
+
+Bodies live in `src/setup/skills/*.md`; `setup::skills` wraps each in frontmatter and a
+`# station-skill v<N>` line and installs it as `~/.claude/skills/<name>/SKILL.md`.
 
 ## Agents
 
-Station installs `fuel.md`, `fuel-high.md`, `mechanic.md` into `~/.claude/agents/` on first
-run and when their bundled version changes (they carry a `# station-agent v<N>` line, and a
-user-edited file without it is left alone). They are the current `implementer`,
-`implementer-high`, `reviewer` contracts plus the Station reporting rules (checkin,
+Station installs `fuel.md`, `fuel-high.md`, `mechanic.md` into `~/.claude/agents/`. They
+are the implementer and reviewer contracts plus the Station reporting rules (checkin,
 `report` at each milestone, `submit_review` or `review_result` at the end). Truck has no
-agent file; its behaviour is in the prompts.
+agent file; its behaviour is in the skills.
+
+Agents and skills install on every GUI start and on `fuel-station install`: written when
+missing or when the bundled version is newer than the installed marker line; a file without
+the marker is user-edited and left alone.
 
 ## Add Project
 
@@ -145,7 +157,7 @@ agent file; its behaviour is in the prompts.
    - `.mcp.json`: adds or replaces the `station` entry
      (`command` = installed exe, `args` = `["mcp", "--project", "<KEY>"]`), keeps others.
    - `CLAUDE.md`: adds or replaces a fenced `<!-- station -->` block with the key and
-     "use the station MCP tools; runbook is `/station:grab`".
+     "use the station MCP tools; runbook is `/grab`".
    - `git init` + `.gitignore` + initial commit when ship mode is git and there is no repo.
 5. A result list shows each file written. The same sheet later offers **Repair setup**.
 

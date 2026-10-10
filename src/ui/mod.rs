@@ -27,8 +27,8 @@ use iced::{
 };
 
 use crate::import::{self, ImportReport};
-use crate::setup::agents;
 use crate::setup::detect::Facts;
+use crate::setup::{agents, skills};
 use crate::store::{
     self, Actor, Agent, CardPatch, CardSummary, Column, Event, NewProject, Project, Role, Store,
     StoreError,
@@ -37,6 +37,9 @@ use detail::{Detail, Leave};
 use notify::TrayAction;
 use runs::{Run, RunEvent};
 use setup_sheet::Sheet;
+
+const APP_ICON: &[u8] = include_bytes!("../../assets/icon/fuel-station-64.rgba");
+const APP_ICON_SIZE: u32 = 64;
 
 pub fn run() {
     let result = iced::application(boot, update, view)
@@ -48,6 +51,7 @@ pub fn run() {
         .window(window::Settings {
             min_size: Some(Size::new(960.0, 600.0)),
             decorations: false,
+            icon: window::icon::from_rgba(APP_ICON.to_vec(), APP_ICON_SIZE, APP_ICON_SIZE).ok(),
             ..window::Settings::default()
         })
         .run();
@@ -337,7 +341,9 @@ fn open() -> State {
         Ok(id) => app.last_event = id,
         Err(e) => app.read_error(e),
     }
-    if let Err(e) = agents::install_agents(&agents::agents_dir()) {
+    if let Err(e) = agents::install_agents(&agents::agents_dir())
+        .and_then(|_| skills::install_skills(&skills::skills_dir()))
+    {
         app.error = Some(format!("agent files: {e}"));
     }
     Ok(app)

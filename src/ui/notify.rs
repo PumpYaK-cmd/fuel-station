@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
-use super::theme;
+use super::{APP_ICON, APP_ICON_SIZE};
 use crate::store::Event;
 
 pub fn toast_text(e: &Event) -> Option<String> {
@@ -66,8 +66,6 @@ pub enum TrayAction {
     Quit,
 }
 
-const ICON_SIZE: u32 = 32;
-
 pub fn tray() -> Result<Tray, String> {
     let show = MenuItem::new("Show", true, None);
     let quit = MenuItem::new("Quit", true, None);
@@ -87,17 +85,7 @@ pub fn tray() -> Result<Tray, String> {
 }
 
 fn icon() -> Result<Icon, String> {
-    let [r, g, b, _] = theme::ACCENT.into_rgba8();
-    let center = (ICON_SIZE as f32 - 1.0) / 2.0;
-    let radius = ICON_SIZE as f32 / 2.0 - 2.0;
-    let rgba = (0..ICON_SIZE * ICON_SIZE)
-        .flat_map(|i| {
-            let (x, y) = ((i % ICON_SIZE) as f32, (i / ICON_SIZE) as f32);
-            let inside = (x - center).hypot(y - center) <= radius;
-            [r, g, b, if inside { 255 } else { 0 }]
-        })
-        .collect();
-    Icon::from_rgba(rgba, ICON_SIZE, ICON_SIZE).map_err(|e| e.to_string())
+    Icon::from_rgba(APP_ICON.to_vec(), APP_ICON_SIZE, APP_ICON_SIZE).map_err(|e| e.to_string())
 }
 
 pub fn tray_messages(tray: &Tray) -> Vec<TrayAction> {

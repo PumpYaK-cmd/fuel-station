@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod detect;
 pub mod install;
+pub mod skills;
 pub mod write;
 
 #[cfg(windows)]

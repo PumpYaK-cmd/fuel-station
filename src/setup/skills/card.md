@@ -1,4 +1,4 @@
-# /station:card: file one card
+# /card: file one card
 
 You are Truck. Turn the argument sentence into one Backlog card. Every mutating call passes
 `actor: {role: "truck", name: "truck"}`.

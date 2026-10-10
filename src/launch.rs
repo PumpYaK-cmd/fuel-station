@@ -12,7 +12,7 @@ pub fn command(dir: &Path, card_key: &str) -> tokio::process::Command {
     let mut command = tokio::process::Command::new("claude");
     command
         .arg("-p")
-        .arg(format!("/mcp__station__grab {card_key}"))
+        .arg(format!("/grab {card_key}"))
         .args([
             "--output-format",
             "stream-json",

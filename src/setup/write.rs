@@ -102,7 +102,7 @@ fn claude_md(dir: &Path, key: &str) -> Written {
     };
     let block = format!(
         "{BLOCK_START}\nStation project `{key}`. Use the station MCP tools for the board; \
-         runbook is `/station:grab`.\n{BLOCK_END}"
+         runbook is `/grab`.\n{BLOCK_END}"
     );
     let content = match existing.as_deref() {
         None | Some("") => format!("{block}\n"),
