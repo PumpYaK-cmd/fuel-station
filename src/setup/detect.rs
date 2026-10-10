@@ -12,6 +12,7 @@ pub struct Facts {
     pub is_git: bool,
     pub remote: Option<String>,
     pub has_claude_md: bool,
+    pub has_claude_local_md: bool,
 }
 
 pub fn detect(dir: &Path, taken_keys: &[String]) -> NewProject {
@@ -50,6 +51,7 @@ pub fn facts(dir: &Path) -> Facts {
             .flatten()
             .filter(|url| !url.is_empty()),
         has_claude_md: dir.join("CLAUDE.md").is_file(),
+        has_claude_local_md: dir.join(super::write::LOCAL_MD).is_file(),
     }
 }
 

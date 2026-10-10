@@ -176,6 +176,11 @@ the marker is user-edited and left alone.
    - `CLAUDE.md`: adds or replaces a fenced `<!-- station -->` block with the key and
      "use the station MCP tools; runbook is `/grab`".
    - `git init` + `.gitignore` + initial commit when ship mode is git and there is no repo.
+   - **Local only** (team repos where `CLAUDE.md` and `.mcp.json` are shared; on by default
+     when `CLAUDE.local.md` exists): the block goes into `CLAUDE.local.md`, the server is
+     registered with `claude mcp add --scope local station -- <exe> mcp --project <KEY>`
+     (removed first, so reruns replace it), `CLAUDE.local.md` is added to
+     `.git/info/exclude` unless already ignored, and no tracked file or git init is touched.
 5. A result list shows each file written. The same sheet later offers **Repair setup**.
 
 Claude Code asks once per project to approve a new `.mcp.json` server. That prompt is the

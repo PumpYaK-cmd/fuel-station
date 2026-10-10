@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
-use iced::{Element, Length, Task};
+use iced::{Alignment, Element, Length, Task};
 
 use super::theme;
 use crate::setup::detect::{self, Facts};
@@ -15,6 +15,7 @@ pub struct Sheet {
     repair: Option<String>,
     form: NewProject,
     facts: Facts,
+    local: bool,
     busy: bool,
     error: Option<String>,
     result: Option<Vec<Written>>,
@@ -36,6 +37,7 @@ pub enum Field {
 pub enum Message {
     Edit(Field, String),
     ShipMode(ShipMode),
+    Local(bool),
     Submit,
     Applied(Vec<Written>),
     Close,
@@ -54,6 +56,7 @@ impl Sheet {
         Sheet {
             repair: None,
             form,
+            local: facts.has_claude_local_md,
             facts,
             busy: false,
             error: None,
@@ -97,6 +100,7 @@ impl Sheet {
         Sheet {
             repair: Some(project.key.clone()),
             form,
+            local: facts.has_claude_local_md,
             facts,
             busy: false,
             error: None,
@@ -124,6 +128,7 @@ impl Sheet {
                 }
             }
             Message::ShipMode(mode) => self.form.ship_mode = mode,
+            Message::Local(local) => self.local = local,
             Message::Submit => {
                 let saved = match &self.repair {
                     Some(key) => store.project_update(key, &self.form),
@@ -134,10 +139,11 @@ impl Sheet {
                         self.error = None;
                         self.busy = true;
                         let key = project.key.clone();
+                        let local = self.local;
                         let apply = Task::perform(
                             async move {
                                 tokio::task::spawn_blocking(move || {
-                                    write::apply(&project, &installed_exe())
+                                    write::apply(&project, &installed_exe(), local)
                                 })
                                 .await
                                 .unwrap_or_else(|e| {
@@ -223,6 +229,23 @@ impl Sheet {
                 "Ship command",
                 input("command", &form.ship_cmd, Field::Ship)
             ),
+            labelled(
+                "Setup files",
+                row![
+                    button(text("Local only"))
+                        .on_press(Message::Local(!self.local))
+                        .style(theme::button(self.local)),
+                    text(if self.local {
+                        "CLAUDE.local.md + MCP at local scope; tracked files untouched"
+                    } else {
+                        "CLAUDE.md + .mcp.json"
+                    })
+                    .color(theme::TEXT_MUTED),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into()
+            ),
         ]
         .spacing(8);
         let facts = &self.facts;
@@ -232,6 +255,14 @@ impl Sheet {
             fact(
                 "CLAUDE.md",
                 if facts.has_claude_md {
+                    "present"
+                } else {
+                    "missing"
+                }
+            ),
+            fact(
+                "CLAUDE.local.md",
+                if facts.has_claude_local_md {
                     "present"
                 } else {
                     "missing"
