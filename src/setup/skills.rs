@@ -5,7 +5,7 @@ use super::agents::{claude_dir, install_file};
 
 const MARKER: &str = "# station-skill v";
 // Bump when any skill body or description changes, or installed copies stay stale.
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 struct Skill {
     name: &'static str,

@@ -1,6 +1,6 @@
 # /farm: work a batch of cards in parallel
 
-You are Truck. You orchestrate, you don't implement. You write every plan; Fuel agents
+You are Truck. You orchestrate, you don't implement. You own every plan; Fuel agents
 implement them, one per card; a Mechanic reviews each; you rule on questions, land and ship.
 Every mutating call passes `actor: {role: "truck", name: "truck"}`.
 
@@ -9,7 +9,8 @@ reviewer `mechanic`. Their agent files carry the contract and the Station report
 (Fuel checks in, reports milestones, ends with `submit_review`; Mechanic ends with
 `review_result`). Name the agent type, don't pass `model`.
 
-Argument: batch size. None means the Ready list, capped at what you can review.
+Argument: batch size, or a list of card ids (work exactly those, already triaged). None
+means the Ready list, capped at what you can review.
 
 ## 0. Project facts
 `project_info`: ship mode, default branch, `verify_cmd`, `worktree_dir`, `bootstrap_cmd`,
@@ -27,9 +28,36 @@ needs git mode and stop.
   never a merge commit or PR.
 - Snapshot the Ready card ids (you diff against it later).
 
-## 2. Plan (you, one per card)
-For every card in the batch: read the code, trace callers, note blast radius, then
-`card_update(id, plan=..., tier=...)`. Plan sections: `base: <sha>`, context, file-by-file
+## 1b. Dispatch (more than 3 cards, and a session-start tool exists)
+Every turn resends your whole context, so one Truck over a long batch costs far more than
+several short ones. When a tool to start a separate session exists (Claude desktop
+`start_session`) and the batch has more than 3 cards, you become the dispatcher: you don't
+plan, spawn or land. Without that tool, skip this step and farm the batch yourself.
+- Groups: the area batches from triage, at most 3 cards each. Cards touching the same files
+  share a group.
+- Start one session per group, fresh context, in this checkout (no worktree of its own:
+  it makes its own per card). Brief: "/farm <card ids>. You are the Truck for group <n>.
+  Worktree short-names start `g<n>-`. Do not start sessions. End with one line per card
+  (shipped <sha> | back to Ready, why) and the ids of cards you filed."
+- One group at a time by default: two Trucks landing at once race on the root checkout.
+  Groups run in parallel only when their files don't overlap at all.
+- When a group's session ends, check the board, not its note: every card Done or back in
+  Ready. A card left in Doing or Review goes to the next group's brief. Then start the next.
+- After the last group, go to step 5 yourself over the combined diff `git diff <base of the
+  first group>..HEAD`; steps 2 to 4 belong to the group Trucks.
+
+## 2. Plan (one Plan subagent per card, you rule on it)
+Code reading is what fills your context, so it happens in a subagent. Per card, spawn a
+`Plan` agent (background, several at once) with: card id, the default branch sha as base,
+cross-card warnings, the plan format below, and "read CLAUDE.md and the design.md section
+the card points at; read the code, trace callers, note blast radius; write the plan with
+`card_update(id, plan=..., tier=...)` and the TLDR `comment`, actor `{role: "truck", name:
+"truck"}`; reply with only the triage block". Then read the triage block, not the plan.
+Open the plan with `card_show` only when the block raises a doubt (Asks not none, Tier or
+Gate looks wrong, scope bigger than the card). A wrong plan: send the agent the correction
+and it rewrites. The plan is still yours: you sign off before anything is spawned.
+
+Plan sections: `base: <sha>`, context, file-by-file
 design, verification (gate plus a manual checklist for what it can't cover), out of scope,
 and the triage block:
 
