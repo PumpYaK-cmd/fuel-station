@@ -16,7 +16,7 @@ fn in_work_tree(dir: &Path) -> bool {
     git(dir, &["rev-parse", "--is-inside-work-tree"]).is_ok()
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     let mut command = Command::new("git");
     command.arg("-C").arg(dir).args(args);
     #[cfg(windows)]

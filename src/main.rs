@@ -23,7 +23,7 @@ struct Cli {
 enum Command {
     Mcp {
         #[arg(long)]
-        project: String,
+        project: Option<String>,
     },
     Install,
     ImportTrello {
@@ -69,7 +69,7 @@ fn main() {
             ui::install_panic_hook();
             ui::run();
         }
-        Some(Command::Mcp { project }) => mcp::run(&project),
+        Some(Command::Mcp { project }) => mcp::run(project.as_deref()),
         Some(Command::Install) => match setup::install::install() {
             Ok(paths) => {
                 for path in paths {
